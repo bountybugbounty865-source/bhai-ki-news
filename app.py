@@ -67,7 +67,7 @@ def home():
                 """
                 count += 1
             if cards:
-                all_news += f"<h2>{category}</h2><div class='grid'>{cards}</div>"
+                all_news += f"<div class='section'><h2>{category}</h2><div class='grid'>{cards}</div></div>"
         except:
             continue
     return f"""
@@ -91,18 +91,24 @@ def home():
     </style></head>
     <body>
         <div class="header"><h1>🔴 BHAI KI NEWS</h1><p><span class="live">● LIVE</span> Real News - Har Minute Update</p><p>Made by Priyanshu Singh | Lucknow</p></div>
-        <div class="search-box"><input type="text" id="search" onkeyup="doSearch()" placeholder="🔍 Khabar Search Karo... jaise - Modi, Cricket, Lucknow..."></div>
+        <div class="search-box"><input type="text" id="search" onkeyup="doSearch()" placeholder="🔍 Sirf 1 word likho... jaise - Lucknow, Cricket, Modi"></div>
         <div id="noResult" style="display:none;text-align:center;padding:20px;font-size:18px">😔 Is naam ki koi khabar nahi mili!</div>
         {all_news}
         <div style="text-align:center;padding:20px;color:gray">© 2026 Bhai Ki News</div>
         <script>
         function doSearch(){{
-            var v = document.getElementById('search').value.toLowerCase();
+            var v = document.getElementById('search').value.toLowerCase().trim();
+            var words = v.split(' ');
             var cards = document.querySelectorAll('.card');
             var found = 0;
             cards.forEach(function(c){{
                 var t = c.innerText.toLowerCase();
-                if(t.includes(v)){{ c.style.display='block'; found++; }} else {{ c.style.display='none'; }}
+                var match = words.some(function(w){{ return w.length>2 && t.includes(w); }});
+                if(v=='' || match){{ c.style.display='block'; found++; }} else {{ c.style.display='none'; }}
+            }});
+            document.querySelectorAll('.section').forEach(function(s){{
+                var vis = Array.from(s.querySelectorAll('.card')).some(function(c){{ return c.style.display!='none'; }});
+                s.style.display = vis ? 'block' : 'none';
             }});
             document.getElementById('noResult').style.display = found==0 ? 'block' : 'none';
         }}
