@@ -1,5 +1,5 @@
 
-import feedparser, re
+import feedparser, re, hashlib
 from flask import Flask
 app = Flask(__name__)
 
@@ -11,14 +11,6 @@ FEEDS = {
     "🌍 World": "https://www.bbc.com/hindi/index.xml",
 }
 
-BACKUP = {
-    "📍 UP / Lucknow": "https://images.unsplash.com/photo-1596040033229-a9821ebd058d?w=600",
-    "🇮🇳 India": "https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=600",
-    "🏏 Cricket": "https://images.unsplash.com/photo-1531415074968-036ba1b575da?w=600",
-    "🎬 Bollywood": "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?w=600",
-    "🌍 World": "https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=600",
-}
-
 def clean(text):
     try:
         text = re.sub('<[^<]+?>', '', text or '')
@@ -26,39 +18,45 @@ def clean(text):
     except:
         return ""
 
-def get_img(entry, cat):
+def get_img(entry, title):
     try:
         if 'media_content' in entry and entry.media_content:
             u = entry.media_content[0].get('url','')
-            if u:
-                return u
+            if u: return u
         if 'media_thumbnail' in entry and entry.media_thumbnail:
             u = entry.media_thumbnail[0].get('url','')
-            if u:
-                return u
+            if u: return u
         if 'enclosures' in entry and entry.enclosures:
             u = entry.enclosures[0].get('href','')
-            if u:
-                return u
+            if u: return u
         m = re.search(r'src="([^"]+)"', entry.get('summary','') or '')
-        if m:
-            return m.group(1)
+        if m: return m.group(1)
     except:
         pass
-    return BACKUP.get(cat, "https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=600")
+    # Photo na mile to har khabar ko ALAG photo - same photo double nahi hoga
+    h = hashlib.md5(title.encode()).hexdigest()[:8]
+    return f"https://picsum.photos/seed/{h}/600/400"
 
 @app.route('/')
 def home():
     all_news = ""
+    seen = set()
     for category, url in FEEDS.items():
         try:
             feed = feedparser.parse(url)
             cards = ""
-            for entry in feed.entries[:6]:
-                img = get_img(entry, category)
+            count = 0
+            for entry in feed.entries:
+                if count >= 6: break
+                title = entry.get('title','').strip()
+                link = entry.get('link','')
+                # Double khabar hatane ke liye
+                if title in seen or link in seen or not title:
+                    continue
+                seen.add(title)
+                seen.add(link)
+                img = get_img(entry, title)
                 desc = clean(entry.get('summary','') or entry.get('description',''))
-                link = entry.get('link','#')
-                title = entry.get('title','Khabar')
                 cards += f"""
                 <div class="card">
                     <img src="{img}">
@@ -67,6 +65,7 @@ def home():
                     <a href="{link}" target="_blank">Poori Khabar Padhein →</a>
                 </div>
                 """
+                count += 1
             if cards:
                 all_news += f"<h2>{category}</h2><div class='grid'>{cards}</div>"
         except:
