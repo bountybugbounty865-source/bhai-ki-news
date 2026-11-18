@@ -33,7 +33,6 @@ def get_img(entry, title):
         if m: return m.group(1)
     except:
         pass
-    # Black photo fix - ab Unsplash wali sahi photo aayegi
     h = hashlib.md5(title.encode()).hexdigest()[:8]
     photos = ["photo-1504711434969-e33886168f5c","photo-1524492412937-b28074a5d7da","photo-1531415074968-036ba1b575da","photo-1489599849927-2ee91cede3ba","photo-1596040033229-a9821ebd058d","photo-1585829365295-ab7cd400c167","photo-1495020689067-958852a7765e","photo-1529107386315-e1a2ed48a620","photo-1541872703-74c5e44368f9","photo-1575320181282-9afab399332c"]
     pick = photos[int(h,16) % len(photos)]
@@ -49,7 +48,7 @@ def home():
             cards = ""
             count = 0
             for entry in feed.entries:
-                if count >= 6: break
+                if count >= 10: break
                 title = entry.get('title','').strip()
                 link = entry.get('link','')
                 if title in seen or link in seen or not title:
@@ -79,6 +78,8 @@ def home():
         .header{{background:#d60000;color:white;padding:20px;text-align:center;position:sticky;top:0;z-index:10}}
         .header h1{{margin:0;font-size:32px}}
         .live{{background:yellow;color:black;padding:3px 10px;border-radius:20px;font-weight:bold}}
+        .search-box{{padding:15px;background:white;position:sticky;top:0;z-index:9;box-shadow:0 2px 5px #ccc}}
+        .search-box input{{width:100%;padding:12px;font-size:16px;border:2px solid #d60000;border-radius:25px;outline:none;box-sizing:border-box}}
         h2{{padding:0 15px;color:#d60000}}
         .grid{{display:grid;grid-template-columns:1fr 1fr;gap:15px;padding:0 15px 20px}}
         .card{{background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px #ccc}}
@@ -90,8 +91,22 @@ def home():
     </style></head>
     <body>
         <div class="header"><h1>🔴 BHAI KI NEWS</h1><p><span class="live">● LIVE</span> Real News - Har Minute Update</p><p>Made by Priyanshu Singh | Lucknow</p></div>
+        <div class="search-box"><input type="text" id="search" onkeyup="doSearch()" placeholder="🔍 Khabar Search Karo... jaise - Modi, Cricket, Lucknow..."></div>
+        <div id="noResult" style="display:none;text-align:center;padding:20px;font-size:18px">😔 Is naam ki koi khabar nahi mili!</div>
         {all_news}
         <div style="text-align:center;padding:20px;color:gray">© 2026 Bhai Ki News</div>
+        <script>
+        function doSearch(){{
+            var v = document.getElementById('search').value.toLowerCase();
+            var cards = document.querySelectorAll('.card');
+            var found = 0;
+            cards.forEach(function(c){{
+                var t = c.innerText.toLowerCase();
+                if(t.includes(v)){{ c.style.display='block'; found++; }} else {{ c.style.display='none'; }}
+            }});
+            document.getElementById('noResult').style.display = found==0 ? 'block' : 'none';
+        }}
+        </script>
     </body></html>
     """
 if __name__ == '__main__':
