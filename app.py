@@ -3,7 +3,6 @@ import feedparser, re
 from flask import Flask
 app = Flask(__name__)
 
-# Ab Google nahi, seedha News Channel se khabar - isme photo hota hai!
 FEEDS = {
     "📍 UP / Lucknow": "https://www.amarujala.com/rss/uttar-pradesh.xml",
     "🇮🇳 India": "https://www.aajtak.in/rss",
@@ -12,7 +11,6 @@ FEEDS = {
     "🌍 World": "https://www.bbc.com/hindi/index.xml",
 }
 
-# Agar kisi me photo na ho to ye sundar photo dikhega, grey dabba nahi
 BACKUP = {
     "📍 UP / Lucknow": "https://images.unsplash.com/photo-1596040033229-a9821ebd058d?w=600",
     "🇮🇳 India": "https://images.unsplash.com/photo-1524492412937-b28074a5d7da?w=600",
@@ -22,41 +20,57 @@ BACKUP = {
 }
 
 def clean(text):
-    text = re.sub('<[^<]+?>', '', text or '')
-    return text[:250] + "..." if len(text) > 250 else text
+    try:
+        text = re.sub('<[^<]+?>', '', text or '')
+        return text[:250] + "..." if len(text) > 250 else text
+    except:
+        return ""
 
 def get_img(entry, cat):
-    if 'media_content' in entry and entry.media_content:
-        u = entry.media_content[0].get('url','')
-        if u: return u
-    if 'media_thumbnail' in entry and entry.media_thumbnail:
-        u = entry.media_thumbnail[0].get('url','')
-        if u: return u
-    if 'enclosures' in entry and entry.enclosures:
-        u = entry.enclosures[0].get('href','')
-        if u and 'jpg' in u or 'png' in u or 'jpeg' in u: return u
-    m = re.search(r'src="([^"]+)"', entry.get('summary',''))
-    if m: return m.group(1)
+    try:
+        if 'media_content' in entry and entry.media_content:
+            u = entry.media_content[0].get('url','')
+            if u:
+                return u
+        if 'media_thumbnail' in entry and entry.media_thumbnail:
+            u = entry.media_thumbnail[0].get('url','')
+            if u:
+                return u
+        if 'enclosures' in entry and entry.enclosures:
+            u = entry.enclosures[0].get('href','')
+            if u:
+                return u
+        m = re.search(r'src="([^"]+)"', entry.get('summary','') or '')
+        if m:
+            return m.group(1)
+    except:
+        pass
     return BACKUP.get(cat, "https://images.unsplash.com/photo-1504711434969-e33886168f5c?w=600")
 
 @app.route('/')
 def home():
     all_news = ""
     for category, url in FEEDS.items():
-        feed = feedparser.parse(url)
-        cards = ""
-        for entry in feed.entries[:6]:
-            img = get_img(entry, category)
-            desc = clean(entry.get('summary','') or entry.get('description',''))
-            cards += f"""
-            <div class="card">
-                <img src="{img}" onerror="this.src='{BACKUP.get(category)}'">
-                <h3>{entry.title}</h3>
-                <p>{desc}</p>
-                <a href="{entry.link}" target="_blank">Poori Khabar Padhein →</a>
-            </div>
-            """
-        all_news += f"<h2>{category}</h2><div class='grid'>{cards}</div>"
+        try:
+            feed = feedparser.parse(url)
+            cards = ""
+            for entry in feed.entries[:6]:
+                img = get_img(entry, category)
+                desc = clean(entry.get('summary','') or entry.get('description',''))
+                link = entry.get('link','#')
+                title = entry.get('title','Khabar')
+                cards += f"""
+                <div class="card">
+                    <img src="{img}">
+                    <h3>{title}</h3>
+                    <p>{desc}</p>
+                    <a href="{link}" target="_blank">Poori Khabar Padhein →</a>
+                </div>
+                """
+            if cards:
+                all_news += f"<h2>{category}</h2><div class='grid'>{cards}</div>"
+        except:
+            continue
     return f"""
     <html><head><title>BHAI KI NEWS</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
