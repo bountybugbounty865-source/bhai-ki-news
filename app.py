@@ -4,11 +4,12 @@ from flask import Flask
 app = Flask(__name__)
 
 FEEDS = {
+    "🇮🇳 India - Main Khabar": "https://www.aajtak.in/rss",
     "📍 UP / Lucknow": "https://www.amarujala.com/rss/uttar-pradesh.xml",
-    "🇮🇳 India": "https://www.aajtak.in/rss",
+    "🪙 Gold / Paisa - Sona Badha Ya Gira?": "https://www.aajtak.in/rss/business",
+    "📚 Padhai / Job - Exam & Naukri": "https://www.aajtak.in/rss/education",
     "🏏 Cricket": "https://www.aajtak.in/rss/sports-cricket",
-    "🎬 Bollywood": "https://www.aajtak.in/rss/entertainment",
-    "🌍 World": "https://www.bbc.com/hindi/index.xml",
+    "🌍 Duniya - Kaam Ki Khabar": "https://www.bbc.com/hindi/index.xml",
 }
 
 def clean(text):
@@ -34,7 +35,7 @@ def get_img(entry, title):
     except:
         pass
     h = hashlib.md5(title.encode()).hexdigest()[:8]
-    photos = ["photo-1504711434969-e33886168f5c","photo-1524492412937-b28074a5d7da","photo-1531415074968-036ba1b575da","photo-1489599849927-2ee91cede3ba","photo-1596040033229-a9821ebd058d","photo-1585829365295-ab7cd400c167","photo-1495020689067-958852a7765e","photo-1529107386315-e1a2ed48a620","photo-1541872703-74c5e44368f9","photo-1575320181282-9afab399332c"]
+    photos = ["photo-1504711434969-e33886168f5c","photo-1524492412937-b28074a5d7da","photo-1531415074968-036ba1b575da","photo-1489599849927-2ee91cede3ba","photo-1596040033229-a9821ebd058d","photo-1585829365295-ab7cd400c167","photo-1495020689067-958852a7765e","photo-1529107386315-e1a2ed48a620","photo-1541872703-74c5e44368f9","photo-1575320181282-9afab399332c","photo-1610375461246-83df859d849d","photo-1523050854058-8df90110c9f1"]
     pick = photos[int(h,16) % len(photos)]
     return f"https://images.unsplash.com/{pick}?w=600"
 
@@ -48,7 +49,7 @@ def home():
             cards = ""
             count = 0
             for entry in feed.entries:
-                if count >= 10: break
+                if count >= 8: break
                 title = entry.get('title','').strip()
                 link = entry.get('link','')
                 if title in seen or link in seen or not title:
@@ -90,8 +91,8 @@ def home():
         @media(max-width:600px){{.grid{{grid-template-columns:1fr}}}}
     </style></head>
     <body>
-        <div class="header"><h1>🔴 BHAI KI NEWS</h1><p><span class="live">● LIVE</span> Real News - Har Minute Update</p><p>Made by Priyanshu Singh | Lucknow</p></div>
-        <div class="search-box"><input type="text" id="search" onkeyup="doSearch()" placeholder="🔍 Sirf 1 word likho... jaise - Lucknow, Cricket, Modi"></div>
+        <div class="header"><h1>🔴 BHAI KI NEWS</h1><p><span class="live">● LIVE</span> Kaam Ki Khabar - India | Gold | Padhai</p><p>Made by Priyanshu Singh | Lucknow</p></div>
+        <div class="search-box"><input type="text" id="search" onkeyup="doSearch()" placeholder="🔍 Search Karo... Gold, Exam, Job, Cricket..."></div>
         <div id="noResult" style="display:none;text-align:center;padding:20px;font-size:18px">😔 Is naam ki koi khabar nahi mili!</div>
         {all_news}
         <div style="text-align:center;padding:20px;color:gray">© 2026 Bhai Ki News</div>
