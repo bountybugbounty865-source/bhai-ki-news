@@ -1,5 +1,5 @@
 
-import feedparser, re, hashlib, urllib.parse
+import feedparser, re, hashlib, urllib.parse, random
 from flask import Flask, request
 app = Flask(__name__)
 
@@ -8,7 +8,24 @@ FEEDS = {
     "🌍 World - Kaam Ki Khabar": "https://www.bbc.com/hindi/index.xml",
 }
 
-# --- LIBRARY KA SAMAAN ---
+# --- NAYA JODA - GK + FORMULA ---
+GK_LIST = [
+    ("Bharat ka Rashtriya Pashu kaun hai?", "Bengal Tiger"),
+    ("Taj Mahal kisne banwaya?", "Shah Jahan ne"),
+    ("Bharat ka sabse bada Rajya kaunsa hai?", "Rajasthan"),
+    ("Computer ka Pita kise kehte hai?", "Charles Babbage"),
+    ("Ganga Nadi kahan se nikalti hai?", "Gangotri se"),
+    ("UP ki Rajdhani kahan hai?", "Lucknow"),
+]
+
+FORMULAS = [
+    ("Maths - (a+b)²", "(a+b)² = a² + 2ab + b²"),
+    ("Maths - Speed", "Speed = Doori / Samay"),
+    ("Science - Pani ka Formula", "H2O"),
+    ("Maths - % Nikalna", "(Bhag / Kul) x 100"),
+]
+
+# --- LIBRARY KA SAMAAN - TERA WAHI PURANA ---
 LIBRARY = {
     "📕 NCERT Books - Class 6 se 12 Free": [
         ("Class 10 - Science / Vigyan", "https://ncert.nic.in/ncerts/l/jesc1ps.pdf"),
@@ -77,10 +94,11 @@ def make_cards(feed, seen, limit=15):
         count += 1
     return cards
 
+# --- HEADER - THODA NAYA, PURANA SAME ---
 def header(search_val=""):
     return f"""
-    <div class="header"><h1>🔴 BHAI KI NEWS</h1><p><span class="live">● LIVE</span> Sirf Kaam Ki Khabar</p><p>Made by Priyanshu Singh | Lucknow</p>
-    <div style="margin-top:12px;display:flex;gap:10px;justify-content:center"><a href="/" style="background:white;color:#d60000;padding:8px 18px;border-radius:20px;text-decoration:none;font-weight:bold">📰 News</a><a href="/library" style="background:yellow;color:black;padding:8px 18px;border-radius:20px;text-decoration:none;font-weight:bold">📚 Padhai Library</a></div></div>
+    <div class="header"><h1>🔴 BHAI KI NEWS</h1><p><span class="live">● LIVE</span> Sirf Kaam Ki Khabar + Free Padhai</p><p>Made by Priyanshu Singh | Lucknow</p>
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><a href="/" style="background:white;color:#d60000;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">📰 News</a><a href="/library" style="background:yellow;color:black;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">📚 Padhai Library</a><a href="/gk" style="background:white;color:#d60000;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">🧠 GK</a><a href="/about" style="background:white;color:#d60000;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">ℹ️ About</a></div></div>
     """
 
 def style():
@@ -105,9 +123,40 @@ def style():
         .card a{display:block;color:#d60000;font-weight:bold;text-decoration:none;padding:0 12px 12px}
         .lib-card{background:white;border-radius:12px;padding:15px;box-shadow:0 2px 8px #ccc}
         .lib-card a{display:block;background:#d60000;color:white;text-align:center;padding:10px;border-radius:10px;text-decoration:none;font-weight:bold;margin-top:10px}
+        .box{background:white;margin:15px;padding:20px;border-radius:12px;box-shadow:0 2px 8px #ccc;line-height:1.7}
+        .footer{text-align:center;padding:20px;color:gray}
+        .footer a{color:#d60000;text-decoration:none;font-weight:bold;margin:0 8px}
         @media(max-width:600px){.grid{grid-template-columns:1fr}}
     </style>
     """
+
+def footer():
+    return """<div class="footer"><a href="/about">About Us</a> | <a href="/contact">Contact Us</a> | <a href="/privacy">Privacy Policy</a><br><br>© 2026 Bhai Ki News - Made by Priyanshu Singh, Lucknow</div>"""
+
+# --- NAYA JODA - 4 NAYE PAGE ---
+@app.route('/about')
+def about():
+    body = """<div class="box"><h2>ℹ️ About Us - Bhai Ki News</h2><p>Namaste Dosto! Main <b>Priyanshu Singh, Lucknow</b> se hu.</p><p>Maine ye website isliye banayi taaki har bhai ko <b>Sirf Kaam Ki Khabar</b> aur <b>Free Padhai</b> ek hi jagah mil jaye.</p><p>Yaha milega: Daily News, NCERT Books, Previous Paper, Sarkari Naukri, GK aur Formula - Sab Free!</p></div>"""
+    return f"""<html><head><title>About Us - Bhai Ki News</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div style="padding-top:10px">{body}</div>{footer()}</body></html>"""
+
+@app.route('/contact')
+def contact():
+    body = """<div class="box"><h2>📞 Contact Us</h2><p>Koi sujhav ho to bataye!</p><p><b>Email:</b> priyanshu.bhaikinews@gmail.com</p><p><b>Address:</b> Lucknow, Uttar Pradesh, India</p></div>"""
+    return f"""<html><head><title>Contact Us - Bhai Ki News</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div style="padding-top:10px">{body}</div>{footer()}</body></html>"""
+
+@app.route('/privacy')
+def privacy():
+    body = """<div class="box"><h2>🔒 Privacy Policy</h2><p>1. Hum aapka koi personal data nahi lete.</p><p>2. Khabar padhne par aap us khabar wali site par jate hai.</p><p>3. Google Ads aane par Google aapko Ads dikha sakta hai.</p></div>"""
+    return f"""<html><head><title>Privacy Policy - Bhai Ki News</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div style="padding-top:10px">{body}</div>{footer()}</body></html>"""
+
+@app.route('/gk')
+def gk():
+    q, a = random.choice(GK_LIST)
+    body = f"""<div class="box"><h2>🧠 Aaj ka GK Question</h2><h3>Q: {q}</h3><p><b>Answer:</b> {a}</p><p style="color:gray;font-size:13px">Refresh karo, naya sawaal aayega!</p></div><h2>📐 Saare Formula</h2><div class="grid">"""
+    for name, val in FORMULAS:
+        body += f"""<div class="lib-card"><h3 style="margin:0">{name}</h3><p style="font-size:18px;font-weight:bold;color:#d60000">{val}</p></div>"""
+    body += "</div>"
+    return f"""<html><head><title>Aaj ka GK Question aur Formula - Bhai Ki News</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div style="padding-top:10px">{body}</div>{footer()}</body></html>"""
 
 @app.route('/library')
 def library():
@@ -117,7 +166,7 @@ def library():
         for name, link in items:
             body += f"""<div class="lib-card"><h3 style="margin:0">{name}</h3><a href="{link}" target="_blank">Khol ke Padho →</a></div>"""
         body += "</div>"
-    return f"""<html><head><title>Padhai Library</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div style="padding-top:10px">{body}</div><div style="text-align:center;padding:20px;color:gray">© 2026 Bhai Ki News - Library</div></body></html>"""
+    return f"""<html><head><title>Padhai Library - Free NCERT Books, Previous Paper</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div style="padding-top:10px">{body}</div>{footer()}</body></html>"""
 
 @app.route('/')
 def home():
@@ -145,15 +194,15 @@ def home():
         body = all_news
         search_val = ""
     return f"""
-    <html><head><title>BHAI KI NEWS</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head>
+    <html><head><title>Bhai Ki News - Kaam Ki Khabar, Free Padhai, GK, Sarkari Naukri</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head>
     <body>
         {header()}
         <div class="search-box">
             <form class="search-row" action="/" method="get"><input type="text" name="q" value="{search_val}" placeholder="🔍 Kuch bhi likho... Army, Gold, Padhai..."><button type="submit">Search</button></form>
-            <div class="tags"><a href="/?q=Army">🪖 Army</a><a href="/?q=Gold">🪙 Gold</a><a href="/?q=Padhai Exam">📚 Padhai</a><a href="/?q=Cricket">🏏 Cricket</a><a href="/?q=Job Naukri">💼 Job</a><a href="/?q=UP Lucknow">📍 UP</a><a href="/library">📚 Library Khol</a></div>
+            <div class="tags"><a href="/?q=Army">🪖 Army</a><a href="/?q=Gold">🪙 Gold</a><a href="/?q=Padhai Exam">📚 Padhai</a><a href="/?q=Cricket">🏏 Cricket</a><a href="/?q=Job Naukri">💼 Job</a><a href="/?q=UP Lucknow">📍 UP</a><a href="/library">📚 Library Khol</a><a href="/gk">🧠 Aaj ka GK</a></div>
         </div>
         {body}
-        <div style="text-align:center;padding:20px;color:gray">© 2026 Bhai Ki News</div>
+        {footer()}
     </body></html>
     """
 if __name__ == '__main__':
