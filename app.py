@@ -92,7 +92,7 @@ def home():
     </style></head>
     <body>
         <div class="header"><h1>🔴 BHAI KI NEWS</h1><p><span class="live">● LIVE</span> Kaam Ki Khabar - India | Gold | Padhai</p><p>Made by Priyanshu Singh | Lucknow</p></div>
-        <div class="search-box"><input type="text" id="search" onkeyup="doSearch()" placeholder="🔍 Search Karo... Gold, Exam, Job, Cricket..."></div>
+        <div class="search-box"><input type="text" id="search" onkeyup="doSearch()" placeholder="🔍 Sirf 1 word likho... Gold, Exam, Cricket"></div>
         <div id="noResult" style="display:none;text-align:center;padding:20px;font-size:18px">😔 Is naam ki koi khabar nahi mili!</div>
         {all_news}
         <div style="text-align:center;padding:20px;color:gray">© 2026 Bhai Ki News</div>
@@ -103,8 +103,8 @@ def home():
             var cards = document.querySelectorAll('.card');
             var found = 0;
             cards.forEach(function(c){{
-                var t = c.innerText.toLowerCase();
-                var match = words.some(function(w){{ return w.length>2 && t.includes(w); }});
+                var t = (c.querySelector('h3').innerText + ' ' + c.querySelector('p').innerText).toLowerCase();
+                var match = words.some(function(w){{ return w.length>2 && t.includes(w) && w!='khabar' && w!='taja' && w!='ka'; }});
                 if(v=='' || match){{ c.style.display='block'; found++; }} else {{ c.style.display='none'; }}
             }});
             document.querySelectorAll('.section').forEach(function(s){{
