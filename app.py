@@ -33,9 +33,11 @@ def get_img(entry, title):
         if m: return m.group(1)
     except:
         pass
-    # Photo na mile to har khabar ko ALAG photo - same photo double nahi hoga
+    # Black photo fix - ab Unsplash wali sahi photo aayegi
     h = hashlib.md5(title.encode()).hexdigest()[:8]
-    return f"https://picsum.photos/seed/{h}/600/400"
+    photos = ["photo-1504711434969-e33886168f5c","photo-1524492412937-b28074a5d7da","photo-1531415074968-036ba1b575da","photo-1489599849927-2ee91cede3ba","photo-1596040033229-a9821ebd058d","photo-1585829365295-ab7cd400c167","photo-1495020689067-958852a7765e","photo-1529107386315-e1a2ed48a620","photo-1541872703-74c5e44368f9","photo-1575320181282-9afab399332c"]
+    pick = photos[int(h,16) % len(photos)]
+    return f"https://images.unsplash.com/{pick}?w=600"
 
 @app.route('/')
 def home():
@@ -50,7 +52,6 @@ def home():
                 if count >= 6: break
                 title = entry.get('title','').strip()
                 link = entry.get('link','')
-                # Double khabar hatane ke liye
                 if title in seen or link in seen or not title:
                     continue
                 seen.add(title)
