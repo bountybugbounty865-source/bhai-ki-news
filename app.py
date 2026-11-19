@@ -27,12 +27,39 @@ FEEDS = {
     "💼 Naukri": "https://news.google.com/rss/search?q=Sarkari Naukri&hl=hi&gl=IN&ceid=IN:hi",
     "📚 Padhai": "https://news.google.com/rss/search?q=Exam Padhai&hl=hi&gl=IN&ceid=IN:hi",
 }
+# --- GK LIST - 31 DIN KE LIYE 31 GK - ROZ 1 AAYEGA ---
 GK_LIST = [
     ("Lal Kila kaha hai?", "Delhi me"),
     ("Taj Mahal kaha hai?", "Agra me"),
     ("Aasman Neela kyu hai?", "Neela rang zyada bikharne se"),
     ("23 x 11 = ?", "253 - Trick se!"),
     ("Bharat ka Rashtriya Pashu kaun hai?", "Bagh"),
+    ("Bharat ki Rajdhani kya hai?", "New Delhi"),
+    ("Bharat ka Rashtriya Pakshi kaunsa hai?", "Mor"),
+    ("Ganga Nadi kaha se nikalti hai?", "Gangotri se"),
+    ("Bharat ka sabse bada Rajya kaunsa hai?", "Rajasthan"),
+    ("Computer ka Pita kise kehte hai?", "Charles Babbage"),
+    ("Bharat ke Pehle Rashtrapati kaun the?", "Dr. Rajendra Prasad"),
+    ("UP ki Rajdhani kya hai?", "Lucknow"),
+    ("Qutub Minar kaha hai?", "Delhi me"),
+    ("Bharat ka Rashtriya Phool kaunsa hai?", "Kamal"),
+    ("Bharat ka Rashtriya Khel kaunsa hai? (Unofficial)", "Hockey mana jata hai"),
+    ("Mahatma Gandhi ka janm kab hua?", "2 October 1869"),
+    ("Bharat ko Azadi kab mili?", "15 August 1947"),
+    ("Bharat ka Samvidhan kab lagu hua?", "26 January 1950"),
+    ("Bharat ka sabse lamba pahaad kaunsa hai?", "K2 - Godwin Austin"),
+    ("Bharat ki sabse lambi nadi kaunsi hai?", "Ganga"),
+    ("Tiranga me kitne rang hote hai?", "3 - Kesar, Safed, Hara + Ashok Chakra"),
+    ("Ashok Chakra me kitni teeliya hoti hai?", "24"),
+    ("Bharat ka Rashtriya Gaan kaunsa hai?", "Jana Gana Mana"),
+    ("Jana Gana Mana kisne likha?", "Rabindranath Tagore"),
+    ("Bharat ka Sabse Bada Sheher kaunsa hai?", "Mumbai"),
+    ("Lucknow kis nadi ke kinare hai?", "Gomti Nadi"),
+    ("Bharat me kitne Rajya hai?", "28 Rajya + 8 Kendra Shasit Pradesh"),
+    ("Chand par pehla kadam kisne rakha?", "Neil Armstrong"),
+    ("Bharat ka Pehla Pradhan Mantri kaun tha?", "Pandit Jawaharlal Nehru"),
+    ("Bharat ka Pehla Upgrah kaunsa tha?", "Aryabhatta"),
+    ("1 Minute me kitne Second hote hai?", "60 Second"),
 ]
 FORMULAS = [
     ("(a+b)²", "(a² + 2ab + b²)"),
@@ -170,8 +197,11 @@ def privacy():
 
 @app.route('/gk')
 def gk():
-    q, a = random.choice(GK_LIST)
-    body = f"""<div class="box"><h2>🧠 Aaj ka GK Question</h2><h3>Q: {q}</h3><p><b>Answer:</b> {a}</p><p style="color:gray;font-size:13px">Refresh karo, naya sawaal aayega!</p></div><h2>📐 Saare Formula</h2><div class="grid">"""
+    # ROZ AUTOMATIC GK - Date se chunega, Refresh se nahi badlega
+    aaj = datetime.now()
+    din_number = aaj.timetuple().tm_yday  # Saal ka kaunsa din hai 1-365
+    q, a = GK_LIST[din_number % len(GK_LIST)]
+    body = f"""<div class="box"><h2>🧠 Aaj ka GK Question - {aaj.strftime('%d %B %Y')}</h2><h3>Q: {q}</h3><p><b>Answer:</b> {a}</p><p style="color:gray;font-size:13px">Kal naya sawaal apne aap aayega! Roz 1 naya GK!</p></div><h2>📐 Saare Formula</h2><div class="grid">"""
     for name, val in FORMULAS:
         body += f"""<div class="lib-card"><h3 style="margin:0">{name}</h3><p style="font-size:18px;font-weight:bold;color:#d60000">{val}</p></div>"""
     body += "</div>"
