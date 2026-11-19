@@ -84,6 +84,8 @@ def header(search_val=""):
     d = load_data()
     d["total"] = d.get("total",0)+1
     today_str = datetime.now().strftime("%Y-%m-%d")
+    if not isinstance(d.get("today"), dict):
+        d["today"] = {}
     d["today"][today_str] = d["today"].get(today_str,0)+1
     save_data(d)
     return f"""<div class="header"><h1>🔴 BHAI KI NEWS</h1><p><span class="live">● LIVE</span> Sirf Kaam Ki Khabar + Free Padhai</p><p>Made by Priyanshu Singh | Lucknow</p><p style="background:black;color:white;display:inline-block;padding:5px 12px;border-radius:20px;font-size:13px">👀 Aaj Aaye: {d["today"][today_str]} | Total: {d["total"]}</p><div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><a href="/" style="background:white;color:#d60000;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">📰 News</a><a href="/library" style="background:yellow;color:black;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">📚 Padhai Library</a><a href="/gk" style="background:white;color:#d60000;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">🧠 GK</a><a href="/about" style="background:white;color:#d60000;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">ℹ️ About</a><a href="/admin" style="background:black;color:white;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">🔐 Admin</a></div></div>"""
@@ -102,9 +104,10 @@ def admin():
         return f"""<html><head><title>Admin Login</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div class="box"><h2>🔐 Admin Login - Sirf Priyanshu Ke Liye</h2><form method="post"><input type="password" name="password" placeholder="Password dalo"><button class="btn">Login Karo</button></form></div>{footer()}</body></html>"""
     d = load_data()
     today_str = datetime.now().strftime("%Y-%m-%d")
+    today_dict = d.get("today") if isinstance(d.get("today"), dict) else {}
     reads_html = "".join([f"<p>• {k} - {v} baar padha gaya</p>" for k,v in d.get("reads",{}).items()]) or "<p>Abhi kisi ne nahi padha</p>"
     my_html = "".join([f"<div class='lib-card'><h3>{a['title']} [{a['cat']}]</h3><p>{a['text']}</p></div>" for a in d.get("my_articles",[])])
-    return f"""<html><head><title>Secret Dashboard</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div class="box"><h2>👀 SECRET DASHBOARD</h2><p><b>Total Visitors:</b> {d.get('total',0)}</p><p><b>Aaj Aaye:</b> {d['today'].get(today_str,0)}</p><h3>Kya Kya Padha Gaya?</h3>{reads_html}</div><div class="box"><h2>✍️ Apne Man Se Article Dalo</h2><form action="/add-article" method="post"><input name="title" placeholder="Title" required><select name="cat"><option>Math</option><option>Science</option><option>Hindi</option><option>News</option><option>Article</option></select><textarea name="text" rows="5" placeholder="Yaha apna Article likho..." required></textarea><button class="btn">Publish Karo 🚀</button></form></div><div class="box"><h2>📚 Tumhare Dale Hue Article</h2>{my_html or '<p>Abhi koi nahi hai</p>'}</div>{footer()}</body></html>"""
+    return f"""<html><head><title>Secret Dashboard</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div class="box"><h2>👀 SECRET DASHBOARD</h2><p><b>Total Visitors:</b> {d.get('total',0)}</p><p><b>Aaj Aaye:</b> {today_dict.get(today_str,0)}</p><h3>Kya Kya Padha Gaya?</h3>{reads_html}</div><div class="box"><h2>✍️ Apne Man Se Article Dalo</h2><form action="/add-article" method="post"><input name="title" placeholder="Title" required><select name="cat"><option>Math</option><option>Science</option><option>Hindi</option><option>News</option><option>Article</option></select><textarea name="text" rows="5" placeholder="Yaha apna Article likho..." required></textarea><button class="btn">Publish Karo 🚀</button></form></div><div class="box"><h2>📚 Tumhare Dale Hue Article</h2>{my_html or '<p>Abhi koi nahi hai</p>'}</div>{footer()}</body></html>"""
 @app.route('/add-article', methods=['POST'])
 def add_article():
     if not session.get('admin'): return redirect('/admin')
@@ -114,7 +117,7 @@ def add_article():
     return redirect('/admin')
 @app.route('/about')
 def about():
-    body = """<div class="box"><h2>ℹ️ About Us - Bhai Ki News</h2><p>Namaste Dosto! Main <b>Priyanshu Singh, Lucknow</b> se hu.</p><p>Maine ye website isliye banayi taaki har bhai ko <b>Sirf Kaam Ki Khabar</b> aur <b>Free Padhai</b> ek hi jagah mil jaye.</p></div>"""
+    body = """<div class="box"><h2>ℹ️ About Us - Bhai Ki News</h2><p>Namaste Dosto! Main <b>Priyanshu Singh, Lucknow</b> se hu.</p><p>Maine ye website isliye banayi taaki har bhai ko <b>Sirf Kaam Ki Khabar</b> aur <b>Free Padhai</b> ek hi jagah mil jaye.</p><p>Yaha milega: Daily News, NCERT Books, Previous Paper, Sarkari Naukri, GK aur Formula - Sab Free!</p></div>"""
     return f"""<html><head><title>About Us</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div style="padding-top:10px">{body}</div>{footer()}</body></html>"""
 @app.route('/contact')
 def contact():
@@ -122,7 +125,7 @@ def contact():
     return f"""<html><head><title>Contact Us</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div style="padding-top:10px">{body}</div>{footer()}</body></html>"""
 @app.route('/privacy')
 def privacy():
-    body = """<div class="box"><h2>🔒 Privacy Policy</h2><p>1. Hum aapka koi personal data nahi lete.</p><p>2. Khabar padhne par aap us khabar wali site par jate hai.</p></div>"""
+    body = """<div class="box"><h2>🔒 Privacy Policy</h2><p>1. Hum aapka koi personal data nahi lete.</p><p>2. Khabar padhne par aap us khabar wali site par jate hai.</p><p>3. Google Ads aane par Google aapko Ads dikha sakta hai.</p></div>"""
     return f"""<html><head><title>Privacy Policy</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div style="padding-top:10px">{body}</div>{footer()}</body></html>"""
 @app.route('/gk')
 def gk():
@@ -179,5 +182,4 @@ def home():
         search_val = ""
     return f"""<html><head><title>Bhai Ki News</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div class="search-box"><form class="search-row" action="/" method="get"><input type="text" name="q" value="{search_val}" placeholder="🔍 Kuch bhi likho..."><button type="submit">Search</button></form><div class="tags"><a href="/?q=Army">🪖 Army</a><a href="/?q=Gold">🪙 Gold</a><a href="/?q=Padhai Exam">📚 Padhai</a><a href="/?q=Cricket">🏏 Cricket</a><a href="/?q=Job Naukri">💼 Job</a><a href="/library">📚 Library Khol</a><a href="/gk">🧠 Aaj ka GK</a></div></div>{body}{footer()}</body></html>"""
 if __name__ == '__main__':
-    import os as _os
-    app.run(host='0.0.0.0', port=int(_os.environ.get('PORT', 10000)))
+    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 10000)))
