@@ -7,10 +7,17 @@ app.secret_key = "bhai-ki-news-secret-123"
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Priyanshu@123")
 DATA_FILE = "bhai_data.json"
 def load_data():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE) as f: return json.load(f)
-        except: pass
+    try:
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE) as f:
+                d = json.load(f)
+                if not isinstance(d, dict): d = {}
+                d.setdefault("total", 0)
+                d.setdefault("today", {})
+                d.setdefault("reads", {})
+                d.setdefault("my_articles", [])
+                return d
+    except: pass
     return {"total":0, "today":{}, "reads":{}, "my_articles":[]}
 def save_data(d):
     with open(DATA_FILE,"w") as f: json.dump(d,f)
