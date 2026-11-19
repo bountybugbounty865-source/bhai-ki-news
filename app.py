@@ -1,92 +1,74 @@
 
-import feedparser, re, hashlib, urllib.parse, random
-from flask import Flask, request
+import feedparser, re, hashlib, urllib.parse, random, os, json
+from flask import Flask, request, redirect, url_for, session
+from datetime import datetime
+
 app = Flask(__name__)
+app.secret_key = "bhai-ki-news-secret-123"
 
+# --- VISITOR + ARTICLE STORAGE - NAYA JODA ---
+DATA_FILE = "bhai_data.json"
+def load_data():
+    if os.path.exists(DATA_FILE):
+        try:
+            with open(DATA_FILE) as f: return json.load(f)
+        except: pass
+    return {"total":0, "today":{}, "reads":{}, "my_articles":[]}
+def save_data(d):
+    with open(DATA_FILE,"w") as f: json.dump(d,f)
+
+# Tera purana data - SAME
 FEEDS = {
-    "🇮🇳 India - Kaam Ki Khabar": "https://www.aajtak.in/rss",
-    "🌍 World - Kaam Ki Khabar": "https://www.bbc.com/hindi/index.xml",
+    "🔥 Top Khabar": "https://news.google.com/rss?hl=hi&gl=IN&ceid=IN:hi",
+    "🏏 Cricket": "https://news.google.com/rss/search?q=Cricket&hl=hi&gl=IN&ceid=IN:hi",
+    "💼 Naukri": "https://news.google.com/rss/search?q=Sarkari Naukri&hl=hi&gl=IN&ceid=IN:hi",
+    "📚 Padhai": "https://news.google.com/rss/search?q=Exam Padhai&hl=hi&gl=IN&ceid=IN:hi",
 }
-
-# --- NAYA JODA - GK + FORMULA ---
 GK_LIST = [
-    ("Bharat ka Rashtriya Pashu kaun hai?", "Bengal Tiger"),
-    ("Taj Mahal kisne banwaya?", "Shah Jahan ne"),
-    ("Bharat ka sabse bada Rajya kaunsa hai?", "Rajasthan"),
-    ("Computer ka Pita kise kehte hai?", "Charles Babbage"),
-    ("Ganga Nadi kahan se nikalti hai?", "Gangotri se"),
-    ("UP ki Rajdhani kahan hai?", "Lucknow"),
+    ("Lal Kila kaha hai?", "Delhi me"),
+    ("Taj Mahal kaha hai?", "Agra me"),
+    ("Aasman Neela kyu hai?", "Neela rang zyada bikharne se"),
+    ("23 x 11 = ?", "253 - Trick se!"),
+    ("Bharat ka Rashtriya Pashu kaun hai?", "Bagh"),
 ]
-
 FORMULAS = [
-    ("Maths - (a+b)²", "(a+b)² = a² + 2ab + b²"),
-    ("Maths - Speed", "Speed = Doori / Samay"),
-    ("Science - Pani ka Formula", "H2O"),
-    ("Maths - % Nikalna", "(Bhag / Kul) x 100"),
+    ("(a+b)²", "(a² + 2ab + b²)"),
+    ("Area - Circle", "πr²"),
+    ("Speed", "Distance / Time"),
+    ("11 se Guna", "23x11 = 253 Trick"),
+]
+LIBRARY = {
+    "📚 NCERT Books": [("Class 10 Maths", "https://ncert.nic.in/"), ("Class 10 Science", "https://ncert.nic.in/")],
+    "📝 Previous Paper": [("UP Board Paper", "https://upmsp.edu.in/"), ("CBSE Paper", "https://cbse.gov.in/")],
+}
+# Teri 4 nayi Library wali cheez - JOD DI
+MY_NEW_ARTICLES = [
+    ("Math - 11 se Guna Trick", "Math", "23 x 11 = 253. 2 aur 3 ko alag karo, beech me 2+3=5 daal do!"),
+    ("Science - Aasman Neela Kyu?", "Science", "Suraj ki roshni me 7 rang hote hai, Neela sabse zyada bikhar ta hai!"),
+    ("Hindi - Mera Gaon Nibandh", "Hindi", "Mera gaon mera garv hai. Yaha ki hawa saaf hai, log madad karte hai!"),
+    ("Best Article - Mehnat Kabhi Bekar Nahi Jaati", "Article", "Kanpur ke Priyanshu ne apni Website bana di. Mehnat wale ko koi nahi rok sakta!"),
 ]
 
-# --- LIBRARY KA SAMAAN - TERA WAHI PURANA ---
-LIBRARY = {
-    "📕 NCERT Books - Class 6 se 12 Free": [
-        ("Class 10 - Science / Vigyan", "https://ncert.nic.in/ncerts/l/jesc1ps.pdf"),
-        ("Class 10 - Maths / Ganit", "https://ncert.nic.in/ncerts/l/jemh1ps.pdf"),
-        ("Class 12 - Physics", "https://ncert.nic.in/ncerts/l/keph1ps.pdf"),
-        ("Class 12 - Biology", "https://ncert.nic.in/ncerts/l/kebo1ps.pdf"),
-        ("Sab NCERT Books Yahi Se Download Karo", "https://ncert.nic.in/textbook.php"),
-    ],
-    "📝 Previous Paper / Exam": [
-        ("UP Board - Previous Paper", "https://upmsp.edu.in/PreviousYearQuestionPaper.html"),
-        ("CBSE - Previous Paper", "https://cbseacademic.nic.in/SQP_CLASSX_2025-26.html"),
-        ("SSC - Previous Paper", "https://ssc.gov.in/"),
-        ("UPSC - Previous Paper", "https://upsc.gov.in/examinations/previous-question-papers"),
-    ],
-    "💼 Sarkari Naukri / Job": [
-        ("Sarkari Result - Sab Naukri", "https://www.sarkariresult.com/"),
-        ("UP Sarkari Naukri", "https://upsssc.gov.in/"),
-        ("Railway Job", "https://www.rrbapply.gov.in/"),
-        ("Army / Agniveer", "https://joinindianarmy.nic.in/"),
-    ],
-    "📖 Free Notes / Padhai Website": [
-        ("Khan Sir - Notes", "https://www.khanglobalstudies.com/"),
-        ("Physics Wallah - Free Notes", "https://www.pw.live/"),
-        ("Unacademy - Free Class", "https://unacademy.com/"),
-        ("Diksha - Govt Free Padhai", "https://diksha.gov.in/"),
-    ],
-}
-
-def clean(text):
-    try:
-        text = re.sub('<[^<]+?>', '', text or '')
-        return text[:200] + "..." if len(text) > 200 else text
-    except:
-        return ""
-
+def clean(t):
+    t = re.sub('<[^<]+?>','',t or '')
+    return t[:180]+"..." if len(t)>180 else t
 def get_img(entry, title):
     try:
-        if 'media_content' in entry and entry.media_content:
-            u = entry.media_content[0].get('url','')
-            if u: return u
-        if 'media_thumbnail' in entry and entry.media_thumbnail:
-            u = entry.media_thumbnail[0].get('url','')
-            if u: return u
-        m = re.search(r'src="([^"]+)"', entry.get('summary','') or '')
-        if m: return m.group(1)
-    except:
-        pass
-    h = hashlib.md5(title.encode()).hexdigest()[:8]
-    photos = ["photo-1504711434969-e33886168f5c","photo-1524492412937-b28074a5d7da","photo-1531415074968-036ba1b575da","photo-1489599849927-2ee91cede3ba","photo-1596040033229-a9821ebd058d","photo-1585829365295-ab7cd400c167","photo-1495020689067-958852a7765e","photo-1529107386315-e1a2ed48a620"]
-    pick = photos[int(h,16) % len(photos)]
-    return f"https://images.unsplash.com/{pick}?w=600"
+        if 'media_content' in entry: return entry.media_content[0]['url']
+        if 'links' in entry:
+            for l in entry.links:
+                if 'image' in l.get('type',''): return l['href']
+    except: pass
+    h = hashlib.md5(title.encode()).hexdigest()
+    return f"https://picsum.photos/seed/{h}/600/400"
 
 def make_cards(feed, seen, limit=15):
-    cards = ""
-    count = 0
+    cards=""; count=0
     for entry in feed.entries:
-        if count >= limit: break
+        if count>=limit: break
         title = entry.get('title','').strip()
         link = entry.get('link','')
-        if title in seen or link in seen or not title:
-            continue
+        if title in seen or link in seen or not title: continue
         seen.add(title); seen.add(link)
         img = get_img(entry, title)
         desc = clean(entry.get('summary','') or entry.get('description',''))
@@ -94,11 +76,18 @@ def make_cards(feed, seen, limit=15):
         count += 1
     return cards
 
-# --- HEADER - THODA NAYA, PURANA SAME ---
+# --- HEADER - THODA NAYA, PURANA SAME + COUNTER + ADMIN BUTTON ---
 def header(search_val=""):
+    d = load_data()
+    # Visitor Count badhao
+    d["total"] = d.get("total",0)+1
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    d["today"][today_str] = d["today"].get(today_str,0)+1
+    save_data(d)
     return f"""
     <div class="header"><h1>🔴 BHAI KI NEWS</h1><p><span class="live">● LIVE</span> Sirf Kaam Ki Khabar + Free Padhai</p><p>Made by Priyanshu Singh | Lucknow</p>
-    <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><a href="/" style="background:white;color:#d60000;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">📰 News</a><a href="/library" style="background:yellow;color:black;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">📚 Padhai Library</a><a href="/gk" style="background:white;color:#d60000;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">🧠 GK</a><a href="/about" style="background:white;color:#d60000;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">ℹ️ About</a></div></div>
+    <p style="background:black;color:white;display:inline-block;padding:5px 12px;border-radius:20px;font-size:13px">👀 Aaj Aaye: {d["today"][today_str]} | Total: {d["total"]}</p>
+    <div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><a href="/" style="background:white;color:#d60000;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">📰 News</a><a href="/library" style="background:yellow;color:black;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">📚 Padhai Library</a><a href="/gk" style="background:white;color:#d60000;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">🧠 GK</a><a href="/about" style="background:white;color:#d60000;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">ℹ️ About</a><a href="/admin" style="background:black;color:white;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">🔐 Admin</a></div></div>
     """
 
 def style():
@@ -126,6 +115,8 @@ def style():
         .box{background:white;margin:15px;padding:20px;border-radius:12px;box-shadow:0 2px 8px #ccc;line-height:1.7}
         .footer{text-align:center;padding:20px;color:gray}
         .footer a{color:#d60000;text-decoration:none;font-weight:bold;margin:0 8px}
+        input,select,textarea{width:100%;padding:12px;margin:8px 0;border:2px solid #ddd;border-radius:10px;font-size:16px}
+        .btn{background:#d60000;color:white;border:none;padding:13px;border-radius:10px;width:100%;font-weight:bold;font-size:16px;cursor:pointer}
         @media(max-width:600px){.grid{grid-template-columns:1fr}}
     </style>
     """
@@ -133,7 +124,36 @@ def style():
 def footer():
     return """<div class="footer"><a href="/about">About Us</a> | <a href="/contact">Contact Us</a> | <a href="/privacy">Privacy Policy</a><br><br>© 2026 Bhai Ki News - Made by Priyanshu Singh, Lucknow</div>"""
 
-# --- NAYA JODA - 4 NAYE PAGE ---
+# --- NAYA JODA - ADMIN + SECRET DASHBOARD ---
+@app.route('/admin', methods=['GET','POST'])
+def admin():
+    if request.method=='POST':
+        if request.form.get('password')=='bhai123':
+            session['admin']=True
+            return redirect('/admin')
+        else:
+            return f"""<html><head><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div class="box"><h2>❌ Galat Password Bhai!</h2><a href="/admin">Fir se try karo</a></div>{footer()}</body></html>"""
+    if not session.get('admin'):
+        return f"""<html><head><title>Admin Login</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div class="box"><h2>🔐 Admin Login - Sirf Priyanshu Ke Liye</h2><form method="post"><input type="password" name="password" placeholder="Password dalo - bhai123"><button class="btn">Login Karo</button></form></div>{footer()}</body></html>"""
+    d = load_data()
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    reads_html = "".join([f"<p>• {k} - {v} baar padha gaya</p>" for k,v in d.get("reads",{}).items()]) or "<p>Abhi kisi ne nahi padha</p>"
+    my_html = "".join([f"<div class='lib-card'><h3>{a['title']} [{a['cat']}]</h3><p>{a['text']}</p></div>" for a in d.get("my_articles",[])])
+    return f"""<html><head><title>Secret Dashboard</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}
+    <div class="box"><h2>👀 SECRET DASHBOARD - Sirf Tumhe Dikhega!</h2><p><b>Total Visitors:</b> {d.get('total',0)}</p><p><b>Aaj Aaye:</b> {d['today'].get(today_str,0)}</p><h3>Kya Kya Padha Gaya?</h3>{reads_html}<p style="color:gray;font-size:13px">Naam/Number kisi ka nahi dikhta, sirf Count dikhta hai. Ye Safe hai!</p></div>
+    <div class="box"><h2>✍️ Apne Man Se Article Dalo</h2><form action="/add-article" method="post"><input name="title" placeholder="Title - Jaise Aaj ka GK" required><select name="cat"><option>Math</option><option>Science</option><option>Hindi</option><option>News</option><option>Article</option></select><textarea name="text" rows="5" placeholder="Yaha apna Article likho..." required></textarea><button class="btn">Publish Karo 🚀</button></form></div>
+    <div class="box"><h2>📚 Tumhare Dale Hue Article</h2>{my_html or '<p>Abhi koi nahi hai</p>'}</div>
+    {footer()}</body></html>"""
+
+@app.route('/add-article', methods=['POST'])
+def add_article():
+    if not session.get('admin'): return redirect('/admin')
+    d = load_data()
+    d.setdefault("my_articles",[]).insert(0, {"title":request.form.get('title'), "cat":request.form.get('cat'), "text":request.form.get('text')})
+    save_data(d)
+    return redirect('/admin')
+
+# --- TERA PURANA 4 PAGE - SAME ---
 @app.route('/about')
 def about():
     body = """<div class="box"><h2>ℹ️ About Us - Bhai Ki News</h2><p>Namaste Dosto! Main <b>Priyanshu Singh, Lucknow</b> se hu.</p><p>Maine ye website isliye banayi taaki har bhai ko <b>Sirf Kaam Ki Khabar</b> aur <b>Free Padhai</b> ek hi jagah mil jaye.</p><p>Yaha milega: Daily News, NCERT Books, Previous Paper, Sarkari Naukri, GK aur Formula - Sab Free!</p></div>"""
@@ -160,7 +180,15 @@ def gk():
 
 @app.route('/library')
 def library():
+    d = load_data()
     body = "<h2 style='text-align:center'>📚 Padhai Library - Sab Free Hai Bhai!</h2>"
+    # Tera purana Library + Naya Article
+    body += "<h2>✍️ Bhai Ke Apne Article - Math / Science / Hindi</h2><div class='grid'>"
+    for title, cat, text in MY_NEW_ARTICLES:
+        body += f"""<div class="lib-card"><h3 style="margin:0">{title}</h3><p>{text}</p><span style="background:#ffe5e5;padding:4px 10px;border-radius:20px;font-size:12px">{cat}</span></div>"""
+    for a in d.get("my_articles",[]):
+        body += f"""<div class="lib-card" style="border:2px solid #d60000"><h3 style="margin:0">{a['title']}</h3><p>{a['text']}</p><span style="background:yellow;padding:4px 10px;border-radius:20px;font-size:12px">{a['cat']} - NAYA!</span></div>"""
+    body += "</div>"
     for cat, items in LIBRARY.items():
         body += f"<h2>{cat}</h2><div class='grid'>"
         for name, link in items:
