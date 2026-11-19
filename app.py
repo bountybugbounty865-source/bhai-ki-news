@@ -1,4 +1,3 @@
-
 import feedparser, re, hashlib, urllib.parse, random, os, json
 from flask import Flask, request, redirect, url_for, session
 from datetime import datetime
@@ -6,11 +5,9 @@ from datetime import datetime
 app = Flask(__name__)
 app.secret_key = "bhai-ki-news-secret-123"
 
-# --- SECRET PASSWORD - YAHI SE BADLEGA, KAHI AUR NAHI DIKHEGA ---
+# Password ab Render ke Environment me set karna hai
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "Priyanshu@123")
-# Naya Password hai: Priyanshu@123 - Isko kisi ko mat batana!
 
-# --- VISITOR + ARTICLE STORAGE ---
 DATA_FILE = "bhai_data.json"
 def load_data():
     if os.path.exists(DATA_FILE):
@@ -27,7 +24,7 @@ FEEDS = {
     "💼 Naukri": "https://news.google.com/rss/search?q=Sarkari Naukri&hl=hi&gl=IN&ceid=IN:hi",
     "📚 Padhai": "https://news.google.com/rss/search?q=Exam Padhai&hl=hi&gl=IN&ceid=IN:hi",
 }
-# --- GK LIST - 31 DIN KE LIYE 31 GK - ROZ 1 AAYEGA ---
+# --- 31 DIN KE LIYE 31 GK ---
 GK_LIST = [
     ("Lal Kila kaha hai?", "Delhi me"),
     ("Taj Mahal kaha hai?", "Agra me"),
@@ -160,14 +157,13 @@ def admin():
         else:
             return f"""<html><head><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div class="box"><h2>❌ Galat Password Bhai!</h2><a href="/admin">Fir se try karo</a></div>{footer()}</body></html>"""
     if not session.get('admin'):
-        # FIX HO GAYA - Yaha ab Password nahi dikhega!
         return f"""<html><head><title>Admin Login</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div class="box"><h2>🔐 Admin Login - Sirf Priyanshu Ke Liye</h2><form method="post"><input type="password" name="password" placeholder="Password dalo"><button class="btn">Login Karo</button></form></div>{footer()}</body></html>"""
     d = load_data()
     today_str = datetime.now().strftime("%Y-%m-%d")
     reads_html = "".join([f"<p>• {k} - {v} baar padha gaya</p>" for k,v in d.get("reads",{}).items()]) or "<p>Abhi kisi ne nahi padha</p>"
     my_html = "".join([f"<div class='lib-card'><h3>{a['title']} [{a['cat']}]</h3><p>{a['text']}</p></div>" for a in d.get("my_articles",[])])
     return f"""<html><head><title>Secret Dashboard</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}
-    <div class="box"><h2>👀 SECRET DASHBOARD - Sirf Tumhe Dikhega!</h2><p><b>Total Visitors:</b> {d.get('total',0)}</p><p><b>Aaj Aaye:</b> {d['today'].get(today_str,0)}</p><h3>Kya Kya Padha Gaya?</h3>{reads_html}<p style="color:gray;font-size:13px">Naam/Number kisi ka nahi dikhta, sirf Count dikhta hai. Ye Safe hai!</p></div>
+    <div class="box"><h2>👀 SECRET DASHBOARD - Sirf Tumhe Dikhega!</h2><p><b>Total Visitors:</b> {d.get('total',0)}</p><p><b>Aaj Aaye:</b> {d['today'].get(today_str,0)}</p><h3>Kya Kya Padha Gaya?</h3>{reads_html}</div>
     <div class="box"><h2>✍️ Apne Man Se Article Dalo</h2><form action="/add-article" method="post"><input name="title" placeholder="Title - Jaise Aaj ka GK" required><select name="cat"><option>Math</option><option>Science</option><option>Hindi</option><option>News</option><option>Article</option></select><textarea name="text" rows="5" placeholder="Yaha apna Article likho..." required></textarea><button class="btn">Publish Karo 🚀</button></form></div>
     <div class="box"><h2>📚 Tumhare Dale Hue Article</h2>{my_html or '<p>Abhi koi nahi hai</p>'}</div>
     {footer()}</body></html>"""
@@ -197,9 +193,8 @@ def privacy():
 
 @app.route('/gk')
 def gk():
-    # ROZ AUTOMATIC GK - Date se chunega, Refresh se nahi badlega
     aaj = datetime.now()
-    din_number = aaj.timetuple().tm_yday  # Saal ka kaunsa din hai 1-365
+    din_number = aaj.timetuple().tm_yday
     q, a = GK_LIST[din_number % len(GK_LIST)]
     body = f"""<div class="box"><h2>🧠 Aaj ka GK Question - {aaj.strftime('%d %B %Y')}</h2><h3>Q: {q}</h3><p><b>Answer:</b> {a}</p><p style="color:gray;font-size:13px">Kal naya sawaal apne aap aayega! Roz 1 naya GK!</p></div><h2>📐 Saare Formula</h2><div class="grid">"""
     for name, val in FORMULAS:
@@ -263,3 +258,5 @@ def home():
     """
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=10000)
+
+        
