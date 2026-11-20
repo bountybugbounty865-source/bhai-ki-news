@@ -1,5 +1,4 @@
-
-                import feedparser, re, hashlib, urllib.parse, random, os, json
+import feedparser, re, hashlib, urllib.parse, random, os, json
 from flask import Flask, request, redirect, url_for, session
 from datetime import datetime
 
