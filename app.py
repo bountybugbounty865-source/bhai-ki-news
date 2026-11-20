@@ -1342,7 +1342,7 @@ def admin():
 
         pw = request.form.get("password", "")
 
-        if ADMIN_PASSWORD and hmac.compare_digest(pw, ADMIN_PASSWORD):
+        if pw == ADMIN_PASSWORD:
             session["admin"] = True
             session.permanent = True
             return redirect(url_for("admin"))
