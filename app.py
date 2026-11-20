@@ -417,44 +417,48 @@ FEEDS = {
 
 
 # =====================================================
-# RSS CACHE
+# RSS CACHE WITH RATE LIMIT PROTECTION
 # =====================================================
 
 FEED_CACHE = {}
-
 FEED_LOCK = RLock()
 
-FEED_CACHE_TIME = 300
+# Cache for 15 minutes
+FEED_CACHE_TIME = 900
 
 
 def fetch_feed(url):
 
     try:
-
         req = urllib.request.Request(
             url,
             headers={
-                "User-Agent": "BhaiKiNews/2.0"
+                "User-Agent": "BhaiKiNews/2.0",
+                "Accept": "application/rss+xml, application/xml, text/xml"
             }
         )
 
         with urllib.request.urlopen(
             req,
-            timeout=8
+            timeout=10
         ) as response:
 
-            content = response.read(2 * 1024 * 1024 + 1)
+            content = response.read(
+                2 * 1024 * 1024 + 1
+            )
 
         if len(content) > 2 * 1024 * 1024:
             raise ValueError("RSS feed too large")
 
         return feedparser.parse(content)
 
-    except Exception:
+    except Exception as e:
 
-        app.logger.exception("RSS feed error")
+        app.logger.warning(
+            "RSS fetch failed: %s", str(e)
+        )
 
-        return feedparser.parse("")
+        return None
 
 
 def get_cached_feed(name, url):
@@ -465,20 +469,35 @@ def get_cached_feed(name, url):
 
         cached = FEED_CACHE.get(name)
 
+        # Return fresh cache
         if cached and now - cached["time"] < FEED_CACHE_TIME:
 
             return cached["feed"]
 
-    feed = fetch_feed(url)
+        # Fetch only when cache expires
+        feed = fetch_feed(url)
 
-    with FEED_LOCK:
+        # Successful fetch
+        if feed is not None:
 
-        FEED_CACHE[name] = {
-            "time": now,
-            "feed": feed
-        }
+            FEED_CACHE[name] = {
+                "time": time.time(),
+                "feed": feed
+            }
 
-    return feed
+            return feed
+
+        # Keep old news if RSS server fails
+        if cached:
+
+            app.logger.warning(
+                "Using stale RSS cache: %s", name
+            )
+
+            return cached["feed"]
+
+        # No old cache available
+        return feedparser.parse("")
 
 
 # =====================================================
