@@ -37,15 +37,6 @@ x_host=1
 SECRET_KEY = os.environ.get("SECRET_KEY", "")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 
-if len(SECRET_KEY) < 32:
-raise RuntimeError(
-"SECRET_KEY kam-se-kam 32 characters ka hona chahiye."
-)
-
-if len(ADMIN_PASSWORD) < 12:
-raise RuntimeError(
-"ADMIN_PASSWORD kam-se-kam 12 characters ka hona chahiye."
-)
 
 app.secret_key = SECRET_KEY
 
