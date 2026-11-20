@@ -26,7 +26,7 @@ BHAI KI NEWS - COMPLETE FLASK APPLICATION
 
 =====================================================
 
-app = Flask(name)
+app = Flask(__name__)
 
 app.wsgi_app = ProxyFix(
 app.wsgi_app,
@@ -62,7 +62,7 @@ MAX_CONTENT_LENGTH=1 * 1024 * 1024
 
 TZ = ZoneInfo("Asia/Kolkata")
 
-BASE_DIR = os.path.dirname(os.path.abspath(file))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 DATA_DIR = (
 "/data"
@@ -450,7 +450,7 @@ WEBSITE DESIGN
 
 CSS = """
 
-{
+* {
 box-sizing: border-box;
 }
 
