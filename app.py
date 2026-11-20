@@ -6,1013 +6,1001 @@ import time
 import sqlite3
 import secrets
 import hashlib
+import ipaddress
+import urllib.parse
 import urllib.request
-import xml.etree.ElementTree as ET
+import feedparser
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-from contextlib import contextmanager
+from threading import RLock
+from concurrent.futures import ThreadPoolExecutor
 
 from flask import (
-Flask, request, redirect, url_for, session,
-abort, render_template_string
+    Flask, request, redirect, session,
+    abort, make_response, url_for
 )
 
-from werkzeug.middleware.proxy_fix import ProxyFix
 
-# ==========================================
-# BHAI KI NEWS - COMPLETE FLASK APPLICATION
-
-# ==========================================
+# =====================================================
+# APP CONFIGURATION
+# =====================================================
 
 app = Flask(__name__)
-
-app.wsgi_app = ProxyFix(
-app.wsgi_app,
-x_for=1,
-x_proto=1,
-x_host=1
-)
 
 SECRET_KEY = os.environ.get("SECRET_KEY", "")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 
+if len(SECRET_KEY) < 32:
+    raise RuntimeError("SECRET_KEY must be at least 32 characters!")
+
+if len(ADMIN_PASSWORD) < 12:
+    raise RuntimeError("ADMIN_PASSWORD must be at least 12 characters!")
 
 app.secret_key = SECRET_KEY
 
 app.config.update(
-SESSION_COOKIE_HTTPONLY=True,
-SESSION_COOKIE_SAMESITE="Lax",
-SESSION_COOKIE_SECURE=(
-os.environ.get("COOKIE_SECURE", "true").lower() == "true"
-),
-PERMANENT_SESSION_LIFETIME=60 * 60 * 8,
-MAX_CONTENT_LENGTH=1 * 1024 * 1024
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SECURE=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    PERMANENT_SESSION_LIFETIME=timedelta(minutes=30),
+    MAX_CONTENT_LENGTH=500 * 1024
 )
 
 TZ = ZoneInfo("Asia/Kolkata")
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SITE_NAME = "BHAI KI NEWS"
 
-DATA_DIR = (
-"/data"
-if os.path.isdir("/data") and os.access("/data", os.W_OK)
-else os.path.join(BASE_DIR, "instance")
-)
+# Render Persistent Disk
 
-os.makedirs(DATA_DIR, exist_ok=True)
+if os.path.isdir("/data") and os.access("/data", os.W_OK):
+    DATA_DIR = "/data"
+else:
+    DATA_DIR = "instance"
+    os.makedirs(DATA_DIR, exist_ok=True)
 
-DB_PATH = os.path.join(DATA_DIR, "bhai_news.db")
+DB_FILE = os.path.join(DATA_DIR, "bhai_data.db")
 
-SITE_NAME = "Bhai Ki News"
-SITE_TAGLINE = "News • Free Study • GK • Electrical"
+DB_LOCK = RLock()
 
-=====================================================
 
-DATABASE
+# =====================================================
+# DATABASE
+# =====================================================
 
-=====================================================
+def get_db():
 
-@contextmanager
-def db():
+    conn = sqlite3.connect(
+        DB_FILE,
+        timeout=20
+    )
 
-conn = sqlite3.connect(    
-    DB_PATH,    
-    timeout=20    
-)    
+    conn.row_factory = sqlite3.Row
 
-conn.row_factory = sqlite3.Row    
+    return conn
 
-try:    
-    conn.execute("PRAGMA journal_mode=WAL")    
-    conn.execute("PRAGMA foreign_keys=ON")    
-
-    yield conn    
-
-    conn.commit()    
-
-finally:    
-    conn.close()
 
 def init_db():
 
-with db() as con:    
+    with DB_LOCK:
 
-    con.executescript("""    
+        conn = get_db()
 
-    CREATE TABLE IF NOT EXISTS articles (    
-        id INTEGER PRIMARY KEY AUTOINCREMENT,    
-        title TEXT NOT NULL,    
-        body TEXT NOT NULL,    
-        created_at TEXT NOT NULL    
-    );    
+        try:
 
-    CREATE TABLE IF NOT EXISTS visits (    
-        id INTEGER PRIMARY KEY AUTOINCREMENT,    
-        visitor_hash TEXT NOT NULL,    
-        visited_at TEXT NOT NULL,    
-        path TEXT NOT NULL    
-    );    
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS stats (
+                    id INTEGER PRIMARY KEY CHECK(id=1),
+                    total INTEGER DEFAULT 0
+                )
+            """)
 
-    CREATE INDEX IF NOT EXISTS idx_visits_date    
-    ON visits(visited_at);    
+            conn.execute("""
+                INSERT OR IGNORE INTO stats (id, total)
+                VALUES (1, 0)
+            """)
 
-    CREATE INDEX IF NOT EXISTS idx_visits_hash    
-    ON visits(visitor_hash);    
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS daily_visits (
+                    day TEXT PRIMARY KEY,
+                    visits INTEGER DEFAULT 0
+                )
+            """)
 
-    CREATE TABLE IF NOT EXISTS login_attempts (    
-        attempt_key TEXT PRIMARY KEY,    
-        count INTEGER NOT NULL,    
-        first_at REAL NOT NULL,    
-        blocked_until REAL NOT NULL DEFAULT 0    
-    );    
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS visitor_sessions (
+                    visitor_id TEXT,
+                    day TEXT,
+                    PRIMARY KEY(visitor_id, day)
+                )
+            """)
 
-    """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS articles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    title TEXT NOT NULL,
+                    category TEXT NOT NULL,
+                    content TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                )
+            """)
+
+            conn.execute("""
+                CREATE INDEX IF NOT EXISTS
+                article_date_index
+                ON articles(created_at)
+            """)
+
+            conn.commit()
+
+        finally:
+            conn.close()
+
 
 init_db()
 
-=====================================================
 
-CSRF SECURITY
+# =====================================================
+# DATABASE HELPERS
+# =====================================================
 
-=====================================================
+def get_stats():
+
+    with DB_LOCK:
+
+        conn = get_db()
+
+        try:
+
+            today = datetime.now(TZ).strftime("%Y-%m-%d")
+
+            total = conn.execute(
+                "SELECT total FROM stats WHERE id=1"
+            ).fetchone()
+
+            daily = conn.execute(
+                "SELECT visits FROM daily_visits WHERE day=?",
+                (today,)
+            ).fetchone()
+
+            return {
+                "total": total["total"] if total else 0,
+                "today": daily["visits"] if daily else 0
+            }
+
+        finally:
+            conn.close()
+
+
+def get_articles():
+
+    with DB_LOCK:
+
+        conn = get_db()
+
+        try:
+
+            rows = conn.execute("""
+                SELECT * FROM articles
+                ORDER BY id DESC
+            """).fetchall()
+
+            return [dict(row) for row in rows]
+
+        finally:
+            conn.close()
+
+
+def add_article(title, category, content):
+
+    with DB_LOCK:
+
+        conn = get_db()
+
+        try:
+
+            conn.execute("""
+                INSERT INTO articles
+                (title, category, content, created_at)
+                VALUES (?, ?, ?, ?)
+            """, (
+                title,
+                category,
+                content,
+                datetime.now(TZ).isoformat()
+            ))
+
+            conn.commit()
+
+        finally:
+            conn.close()
+
+
+def delete_article(article_id):
+
+    with DB_LOCK:
+
+        conn = get_db()
+
+        try:
+
+            conn.execute(
+                "DELETE FROM articles WHERE id=?",
+                (article_id,)
+            )
+
+            conn.commit()
+
+        finally:
+            conn.close()
+
+
+# =====================================================
+# VISITOR COUNTER
+# =====================================================
+
+@app.before_request
+def count_visitors():
+
+    if request.method != "GET":
+        return
+
+    if request.path.startswith("/static"):
+        return
+
+    if request.path in ("/health",):
+        return
+
+    if request.path.startswith("/admin"):
+        return
+
+    today = datetime.now(TZ).strftime("%Y-%m-%d")
+
+    visitor_id = session.get("visitor_id")
+
+    if not visitor_id:
+
+        visitor_id = secrets.token_urlsafe(24)
+
+        session["visitor_id"] = visitor_id
+
+    if session.get("visited_date") == today:
+        return
+
+    with DB_LOCK:
+
+        conn = get_db()
+
+        try:
+
+            conn.execute("BEGIN IMMEDIATE")
+
+            cursor = conn.execute("""
+                INSERT OR IGNORE INTO visitor_sessions
+                (visitor_id, day)
+                VALUES (?, ?)
+            """, (visitor_id, today))
+
+            if cursor.rowcount:
+
+                conn.execute("""
+                    UPDATE stats
+                    SET total = total + 1
+                    WHERE id=1
+                """)
+
+                conn.execute("""
+                    INSERT INTO daily_visits(day, visits)
+                    VALUES (?, 1)
+                    ON CONFLICT(day)
+                    DO UPDATE SET visits = visits + 1
+                """, (today,))
+
+            conn.commit()
+
+            session["visited_date"] = today
+
+        except Exception:
+
+            conn.rollback()
+            app.logger.exception("Visitor counter error")
+
+        finally:
+            conn.close()
+
+
+# =====================================================
+# SECURITY HELPERS
+# =====================================================
+
+def esc(value):
+
+    return html.escape(
+        str(value or ""),
+        quote=True
+    )
+
 
 def csrf_token():
 
-token = session.get("_csrf")    
+    if "_csrf" not in session:
 
-if not token:    
-    token = secrets.token_urlsafe(32)    
-    session["_csrf"] = token    
+        session["_csrf"] = secrets.token_urlsafe(32)
 
-return token
+    return session["_csrf"]
+
+
+def csrf_input():
+
+    return (
+        '<input type="hidden" name="_csrf" value="'
+        + esc(csrf_token())
+        + '">'
+    )
+
 
 def check_csrf():
 
-sent = request.form.get("_csrf", "")    
-saved = session.get("_csrf", "")    
+    sent = request.form.get("_csrf", "")
 
-if (    
-    not sent    
-    or not saved    
-    or not hmac.compare_digest(sent, saved)    
-):    
-    abort(400)
+    saved = session.get("_csrf", "")
 
-@app.context_processor
-def inject_globals():
+    if not sent or not saved:
+        abort(403)
 
-return {    
-    "csrf_token": csrf_token,    
-    "site_name": SITE_NAME    
-}
+    if not hmac.compare_digest(sent, saved):
+        abort(403)
 
-=====================================================
 
-SECURITY HEADERS
+def admin_required():
 
-=====================================================
+    return bool(session.get("admin") is True)
+
+
+def require_admin():
+
+    if not admin_required():
+
+        return redirect(url_for("admin"))
+
+    return None
+
 
 @app.after_request
 def security_headers(response):
 
-response.headers["X-Content-Type-Options"] = "nosniff"    
+    response.headers["X-Content-Type-Options"] = "nosniff"
 
-response.headers["X-Frame-Options"] = "DENY"    
+    response.headers["X-Frame-Options"] = "DENY"
 
-response.headers["Referrer-Policy"] = (    
-    "strict-origin-when-cross-origin"    
-)    
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
 
-response.headers["Permissions-Policy"] = (    
-    "camera=(), microphone=(), geolocation=()"    
-)    
-
-response.headers["Content-Security-Policy"] = (    
-    "default-src 'self' https: data:; "    
-    "style-src 'self' 'unsafe-inline' https:; "    
-    "img-src 'self' https: data:; "    
-    "base-uri 'self'; "    
-    "form-action 'self'; "    
-    "frame-ancestors 'none'"    
-)    
-
-if request.is_secure:    
-
-    response.headers["Strict-Transport-Security"] = (    
-        "max-age=31536000; includeSubDomains"    
-    )    
-
-return response
-
-=====================================================
-
-VISITOR COUNTER
-
-=====================================================
-
-def visitor_hash():
-
-raw = (    
-    (request.remote_addr or "")    
-    + "|"    
-    + request.headers.get("User-Agent", "")[:250]    
-)    
-
-return hashlib.sha256(    
-    (SECRET_KEY + raw).encode()    
-).hexdigest()
-
-def record_visit():
-
-if request.method != "GET":    
-    return    
-
-if request.path.startswith(("/static", "/health")):    
-    return    
-
-ua = request.headers.get("User-Agent", "").lower()    
-
-if any(    
-    bot in ua    
-    for bot in ("bot", "spider", "crawler", "slurp")    
-):    
-    return    
-
-with db() as con:    
-
-    con.execute(    
-        """    
-        INSERT INTO visits    
-        (visitor_hash, visited_at, path)    
-        VALUES (?, ?, ?)    
-        """,    
-        (    
-            visitor_hash(),    
-            datetime.now(TZ).isoformat(timespec="seconds"),    
-            request.path[:250]    
-        )    
+    response.headers["Permissions-Policy"] = (
+        "camera=(), microphone=(), geolocation=()"
     )
 
-@app.before_request
-def count_visit():
-
-try:    
-    record_visit()    
-
-except sqlite3.Error:    
-
-    app.logger.exception(    
-        "Visitor counter database error"    
+    response.headers["Content-Security-Policy"] = (
+        "default-src 'self' https:; "
+        "img-src 'self' https: data:; "
+        "style-src 'self' 'unsafe-inline'; "
+        "script-src 'self'; "
+        "object-src 'none'; "
+        "base-uri 'self'; "
+        "frame-ancestors 'none'"
     )
 
-=====================================================
+    if request.path.startswith("/admin"):
+        response.headers["Cache-Control"] = "no-store"
 
-DAILY GK
+    return response
 
-=====================================================
 
-GK = [
+# =====================================================
+# NEWS FEEDS
+# =====================================================
 
-("भारत का संविधान कब लागू हुआ?", "26 जनवरी 1950"),    
-("भारत की राजधानी क्या है?", "नई दिल्ली"),    
-("उत्तर प्रदेश की राजधानी क्या है?", "लखनऊ"),    
-("भारत का राष्ट्रीय जलीय जीव कौन है?", "गंगा डॉल्फिन"),    
-("विद्युत धारा की SI इकाई क्या है?", "एम्पियर"),    
-("ओम का नियम क्या है?", "V = I × R"),    
-("भारत का सबसे बड़ा राज्य कौन-सा है?", "राजस्थान"),    
-("सौरमंडल का सबसे बड़ा ग्रह कौन-सा है?", "बृहस्पति"),    
-("रक्त पंप करने वाला अंग कौन-सा है?", "हृदय"),    
-("पृथ्वी का प्राकृतिक उपग्रह कौन है?", "चंद्रमा"),    
-("भारत का राष्ट्रीय पशु कौन है?", "बाघ"),    
-("कंप्यूटर का मस्तिष्क किसे कहते हैं?", "CPU"),    
-("पानी का रासायनिक सूत्र क्या है?", "H₂O"),    
-("पौधे प्रकाश संश्लेषण में कौन-सी गैस लेते हैं?", "कार्बन डाइऑक्साइड"),    
-("शिक्षक दिवस कब मनाया जाता है?", "5 सितंबर"),    
-("भारत का राष्ट्रीय गान किसने लिखा?", "रवीन्द्रनाथ टैगोर"),    
-("विद्युत शक्ति की SI इकाई क्या है?", "वाट"),    
-("ट्रांसफॉर्मर किस सिद्धांत पर काम करता है?", "पारस्परिक विद्युत चुंबकीय प्रेरण"),    
-("भारत का पहला उपग्रह कौन-सा था?", "आर्यभट्ट"),    
-("विश्व पर्यावरण दिवस कब मनाया जाता है?", "5 जून"),    
-("भारत का राष्ट्रीय फूल कौन-सा है?", "कमल")
+FEEDS = {
+
+    "🔥 Top Khabar":
+        "https://news.google.com/rss?hl=hi&gl=IN&ceid=IN:hi",
+
+    "🏏 Cricket":
+        "https://news.google.com/rss/search?q=Cricket&hl=hi&gl=IN&ceid=IN:hi",
+
+    "💼 Naukri":
+        "https://news.google.com/rss/search?q=Sarkari+Naukri&hl=hi&gl=IN&ceid=IN:hi",
+
+    "📚 Padhai":
+        "https://news.google.com/rss/search?q=Exam+Padhai&hl=hi&gl=IN&ceid=IN:hi"
+
+}
+
+
+# =====================================================
+# RSS CACHE
+# =====================================================
+
+FEED_CACHE = {}
+
+FEED_LOCK = RLock()
+
+FEED_CACHE_TIME = 300
+
+
+def fetch_feed(url):
+
+    try:
+
+        req = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": "BhaiKiNews/2.0"
+            }
+        )
+
+        with urllib.request.urlopen(
+            req,
+            timeout=8
+        ) as response:
+
+            content = response.read(2 * 1024 * 1024 + 1)
+
+        if len(content) > 2 * 1024 * 1024:
+            raise ValueError("RSS feed too large")
+
+        return feedparser.parse(content)
+
+    except Exception:
+
+        app.logger.exception("RSS feed error")
+
+        return feedparser.parse("")
+
+
+def get_cached_feed(name, url):
+
+    now = time.time()
+
+    with FEED_LOCK:
+
+        cached = FEED_CACHE.get(name)
+
+        if cached and now - cached["time"] < FEED_CACHE_TIME:
+
+            return cached["feed"]
+
+    feed = fetch_feed(url)
+
+    with FEED_LOCK:
+
+        FEED_CACHE[name] = {
+            "time": now,
+            "feed": feed
+        }
+
+    return feed
+
+
+# =====================================================
+# CONTENT HELPERS
+# =====================================================
+
+def clean(text):
+
+    text = re.sub(
+        r"<[^>]*>",
+        " ",
+        str(text or "")
+    )
+
+    text = html.unescape(text)
+
+    text = re.sub(
+        r"\s+",
+        " ",
+        text
+    ).strip()
+
+    if len(text) > 180:
+
+        text = text[:180] + "..."
+
+    return text
+
+
+def safe_url(url):
+
+    try:
+
+        parsed = urllib.parse.urlsplit(str(url))
+
+        if parsed.scheme not in ("http", "https"):
+            return ""
+
+        if not parsed.hostname:
+            return ""
+
+        if parsed.username or parsed.password:
+            return ""
+
+        hostname = parsed.hostname
+
+        if hostname.lower() == "localhost":
+            return ""
+
+        try:
+
+            ip = ipaddress.ip_address(hostname)
+
+            if not ip.is_global:
+                return ""
+
+        except ValueError:
+            pass
+
+        return str(url)
+
+    except Exception:
+
+        return ""
+
+
+def get_img(entry, title):
+
+    try:
+
+        media = entry.get("media_content", [])
+
+        if media:
+
+            url = safe_url(
+                media[0].get("url", "")
+            )
+
+            if url:
+                return url
+
+        for link in entry.get("links", []):
+
+            if "image" in link.get("type", ""):
+
+                url = safe_url(
+                    link.get("href", "")
+                )
+
+                if url:
+                    return url
+
+    except Exception:
+        pass
+
+    image_hash = hashlib.sha256(
+        title.encode("utf-8")
+    ).hexdigest()[:20]
+
+    return (
+        "https://picsum.photos/seed/"
+        + image_hash
+        + "/600/400"
+    )
+
+
+def make_cards(feed, seen, limit=15):
+
+    cards = ""
+
+    count = 0
+
+    for entry in getattr(feed, "entries", []):
+
+        if count >= limit:
+            break
+
+        title = clean(
+            entry.get("title", "")
+        )
+
+        link = safe_url(
+            entry.get("link", "")
+        )
+
+        if not title or not link:
+            continue
+
+        if title in seen or link in seen:
+            continue
+
+        seen.add(title)
+        seen.add(link)
+
+        img = get_img(entry, title)
+
+        description = clean(
+            entry.get("summary", "")
+            or entry.get("description", "")
+        )
+
+        cards += f"""
+        <div class="card">
+
+            <img src="{esc(img)}"
+                 alt="{esc(title)}"
+                 loading="lazy">
+
+            <h3>{esc(title)}</h3>
+
+            <p>{esc(description)}</p>
+
+            <a href="{esc(link)}"
+               target="_blank"
+               rel="noopener noreferrer">
+               Poori Khabar Padhein
+            </a>
+
+        </div>
+        """
+
+        count += 1
+
+    return cards
+
+
+# =====================================================
+# GK
+# =====================================================
+
+GK_LIST = [
+
+    ("Lal Kila kaha hai?", "Delhi me"),
+
+    ("Taj Mahal kaha hai?", "Agra me"),
+
+    ("Aasman Neela kyu hai?",
+     "Neeli roshni ka prakirnan zyada hota hai"),
+
+    ("23 x 11 = ?", "253"),
+
+    ("Bharat ka Rashtriya Pashu kaun hai?", "Bagh"),
+
+    ("Bharat ki Rajdhani kya hai?", "New Delhi"),
+
+    ("Bharat ka Rashtriya Pakshi kaunsa hai?", "Mor"),
+
+    ("Ganga Nadi ka udgam kahan hai?",
+     "Gangotri Glacier ke paas"),
+
+    ("Bharat ka sabse bada Rajya kaunsa hai?",
+     "Rajasthan"),
+
+    ("Computer ka Pita kise kehte hain?",
+     "Charles Babbage"),
+
+    ("Bharat ke Pehle Rashtrapati kaun the?",
+     "Dr. Rajendra Prasad"),
+
+    ("UP ki Rajdhani kya hai?", "Lucknow"),
+
+    ("Qutub Minar kaha hai?", "Delhi me"),
+
+    ("Bharat ka Rashtriya Phool kaunsa hai?", "Kamal"),
+
+    ("Bharat ka Rashtriya Khel kaunsa hai?",
+     "Bharat ka koi adhikarik rashtriya khel nahi hai"),
+
+    ("Mahatma Gandhi ka janm kab hua?",
+     "2 October 1869"),
+
+    ("Bharat ko Azadi kab mili?",
+     "15 August 1947"),
+
+    ("Bharat ka Samvidhan kab lagu hua?",
+     "26 January 1950"),
+
+    ("Bharat ki sabse lambi nadi kaunsi hai?",
+     "Ganga"),
+
+    ("Ashok Chakra me kitni teeliya hoti hain?",
+     "24"),
+
+    ("Bharat ka Rashtriya Gaan kaunsa hai?",
+     "Jana Gana Mana"),
+
+    ("Jana Gana Mana kisne likha?",
+     "Rabindranath Tagore"),
+
+    ("Lucknow kis nadi ke kinare hai?",
+     "Gomti Nadi"),
+
+    ("Bharat me kitne Rajya hain?",
+     "28 Rajya aur 8 Kendra Shasit Pradesh"),
+
+    ("Chand par pehla kadam kisne rakha?",
+     "Neil Armstrong"),
+
+    ("Bharat ke Pehle Pradhan Mantri kaun the?",
+     "Jawaharlal Nehru"),
+
+    ("Bharat ka Pehla Upgrah kaunsa tha?",
+     "Aryabhata"),
+
+    ("1 Minute me kitne Second hote hain?",
+     "60 Second")
 
 ]
 
-=====================================================
 
-ELECTRICAL FORMULAS
-
-=====================================================
+# =====================================================
+# FORMULAS
+# =====================================================
 
 FORMULAS = [
 
-("ओम का नियम", "V = I × R"),    
-("विद्युत शक्ति", "P = V × I"),    
-("विद्युत ऊर्जा", "E = P × t"),    
-("प्रतिरोध", "R = V / I"),    
-("धारा", "I = Q / t"),    
-("आवेश", "Q = I × t"),    
-("श्रृंखला प्रतिरोध", "R = R₁ + R₂ + R₃"),    
-("समानांतर प्रतिरोध", "R = (R₁ × R₂) / (R₁ + R₂)"),    
-("AC आवृत्ति", "f = 1 / T"),    
-("कोणीय आवृत्ति", "ω = 2πf"),    
-("ट्रांसफॉर्मर टर्न्स अनुपात", "V₁ / V₂ = N₁ / N₂"),    
-("ट्रांसफॉर्मर दक्षता", "η = (Output / Input) × 100%"),    
-("सिंक्रोनस गति", "Ns = 120f / P"),    
-("पावर फैक्टर", "cos φ = P / S"),    
-("तीन-फेज शक्ति", "P = √3 × VL × IL × cos φ"),    
-("चुंबकीय फ्लक्स", "Φ = B × A"),    
-("कैपेसिटेंस", "C = Q / V"),    
-("इंडक्टिव रिएक्टेंस", "XL = 2πfL"),    
-("कैपेसिटिव रिएक्टेंस", "XC = 1 / (2πfC)"),    
-("विद्युत बिल ऊर्जा", "यूनिट = Power (kW) × Time (h)")
+    ("(a+b)²", "a² + 2ab + b²"),
+
+    ("Circle Area", "πr²"),
+
+    ("Speed", "Distance / Time"),
+
+    ("Ohm's Law", "V = I × R"),
+
+    ("Electrical Power", "P = V × I"),
+
+    ("Resistance", "R = V / I"),
+
+    ("Current", "I = V / R"),
+
+    ("Electrical Energy", "E = P × t"),
+
+    ("Frequency", "f = 1 / T"),
+
+    ("Power Factor", "cos φ"),
+
+    ("Series Resistance", "R = R1 + R2"),
+
+    ("Parallel Resistance",
+     "1/R = 1/R1 + 1/R2")
 
 ]
 
-def daily_item(items):
 
-index = datetime.now(TZ).date().toordinal() % len(items)    
+# =====================================================
+# AUTOMATIC NOTES
+# =====================================================
 
-return items[index]
+AUTO_NOTES = [
 
-=====================================================
+    {
+        "title": "Aaj Ka GK - Bharat Ki Rajdhani",
+        "cat": "GK",
+        "content": "Bharat ki Rajdhani New Delhi hai."
+    },
 
-RSS NEWS
+    {
+        "title": "Aaj Ka Vocab - 5 New Words",
+        "cat": "English",
+        "content": "Brave = Bahadur, Honest = Imaandaar, Quick = Tez, Happy = Khush, Strong = Mazboot."
+    },
 
-=====================================================
+    {
+        "title": "Aaj Ka Formula - Ganit",
+        "cat": "Maths",
+        "content": "(a+b)² = a² + 2ab + b²."
+    },
 
-RSS_FEEDS = [
+    {
+        "title": "Aaj Ka Computer - CPU",
+        "cat": "Computer",
+        "content": "CPU ka full form Central Processing Unit hai."
+    },
 
-(    
-    "BBC हिंदी",    
-    "https://feeds.bbci.co.uk/hindi/rss.xml"    
-),    
+    {
+        "title": "Aaj Ka SST - Mughal Kal",
+        "cat": "SST",
+        "content": "Akbar Mughal Samrajya ka ek pramukh shasak tha."
+    },
 
-(    
-    "Google News",    
-    "https://news.google.com/rss?hl=hi&gl=IN&ceid=IN:hi"    
-)
+    {
+        "title": "Aaj Ka Current Affairs",
+        "cat": "GK",
+        "content": "Current Affairs ke liye bharosemand news sources padhein."
+    },
+
+    {
+        "title": "Aaj Ka Motivation",
+        "cat": "Motivation",
+        "content": "Roj thoda-thoda padhna bhi achhi progress hai."
+    }
 
 ]
 
-_news_cache = {
-"time": 0,
-"items": []
+
+def get_today_note():
+
+    articles = get_articles()
+
+    if articles:
+
+        note = articles[0]
+
+        return {
+            "title": note["title"],
+            "cat": note["category"],
+            "content": note["content"],
+            "type": "Tera Wala"
+        }
+
+    day = datetime.now(TZ).timetuple().tm_yday
+
+    note = AUTO_NOTES[day % len(AUTO_NOTES)]
+
+    return {
+        "title": note["title"],
+        "cat": note["cat"],
+        "content": note["content"],
+        "type": "Automatic"
+    }
+
+
+# =====================================================
+# LIBRARY
+# =====================================================
+
+LIBRARY = {
+
+    "📚 NCERT Books": [
+
+        ("Class 10 Maths", "https://ncert.nic.in/"),
+
+        ("Class 10 Science", "https://ncert.nic.in/"),
+
+        ("Class 10 English", "https://ncert.nic.in/")
+
+    ],
+
+    "📝 Previous Paper": [
+
+        ("UP Board Paper", "https://upmsp.edu.in/"),
+
+        ("CBSE Paper", "https://cbse.gov.in/")
+
+    ],
+
+    "📖 English Grammar": [
+
+        ("Tense Notes", "https://ncert.nic.in/"),
+
+        ("Active Passive", "https://ncert.nic.in/"),
+
+        ("Letter Writing", "https://ncert.nic.in/")
+
+    ],
+
+    "💻 Computer": [
+
+        ("Computer Kya Hai?", "https://ncert.nic.in/"),
+
+        ("MS Word / Excel", "https://ncert.nic.in/"),
+
+        ("Internet Aur Email", "https://ncert.nic.in/")
+
+    ],
+
+    "🌍 SST": [
+
+        ("Bharat Ka Itihas", "https://ncert.nic.in/"),
+
+        ("Bharat Ka Bhugol", "https://ncert.nic.in/"),
+
+        ("Samvidhan", "https://ncert.nic.in/")
+
+    ],
+
+    "🧠 Daily GK + Formula": [
+
+        ("Aaj Ka GK", "/gk"),
+
+        ("Maths Formula", "/gk"),
+
+        ("Science Formula", "/gk")
+
+    ],
+
+    "💼 Sarkari Naukri": [
+
+        ("UP Police", "https://uppbpb.gov.in/"),
+
+        ("SSC", "https://ssc.gov.in/"),
+
+        ("Railway", "https://rrbapply.gov.in/")
+
+    ]
+
 }
 
-def fetch_news():
 
-now = time.time()    
-
-if now - _news_cache["time"] < 300:    
-    return _news_cache["items"]    
-
-collected = []    
-
-for category, feed_url in RSS_FEEDS:    
-
-    try:    
-
-        req = urllib.request.Request(    
-            feed_url,    
-            headers={    
-                "User-Agent": "BhaiKiNews/1.0"    
-            }    
-        )    
-
-        with urllib.request.urlopen(    
-            req,    
-            timeout=7    
-        ) as response:    
-
-            raw = response.read(1_000_000)    
-
-        root = ET.fromstring(raw)    
-
-        for item in root.findall(".//item")[:8]:    
-
-            title = item.findtext(    
-                "title",    
-                default=""    
-            ).strip()    
-
-            link = item.findtext(    
-                "link",    
-                default=""    
-            ).strip()    
-
-            pub = item.findtext(    
-                "pubDate",    
-                default=""    
-            ).strip()    
-
-            if (    
-                title    
-                and link.startswith(("https://", "http://"))    
-            ):    
-
-                collected.append({    
-
-                    "category": category,    
-                    "title": title[:250],    
-                    "link": link,    
-                    "date": pub[:100]    
-
-                })    
-
-    except Exception:    
-
-        app.logger.warning(    
-            "RSS unavailable: %s",    
-            category    
-        )    
-
-_news_cache["time"] = now    
-_news_cache["items"] = collected    
-
-return collected
-
-=====================================================
-
-WEBSITE DESIGN
-
-=====================================================
-
-CSS = """
-
-* {
-box-sizing: border-box;
-}
-
-
-body {
-margin: 0;
-background: #f3f6fb;
-color: #172033;
-font-family: Arial, sans-serif;
-line-height: 1.6;
-}
-
-header {
-background: #102a56;
-color: white;
-padding: 18px 14px;
-}
-
-.wrap {
-max-width: 1050px;
-margin: auto;
-padding: 14px;
-}
-
-.brand {
-font-size: 25px;
-font-weight: bold;
-}
-
-.tag {
-font-size: 13px;
-color: #dbeafe;
-}
-
-nav {
-display: flex;
-flex-wrap: wrap;
-gap: 8px;
-margin-top: 12px;
-}
-
-nav a {
-color: white;
-text-decoration: none;
-background: #214578;
-padding: 7px 10px;
-border-radius: 7px;
-font-size: 14px;
-}
-
-.box {
-background: white;
-padding: 17px;
-margin: 14px 0;
-border-radius: 12px;
-box-shadow: 0 2px 9px #0000000c;
-}
-
-h1, h2, h3 {
-line-height: 1.3;
-}
-
-h1 {
-font-size: 25px;
-}
-
-h2 {
-font-size: 21px;
-}
-
-.grid {
-display: grid;
-grid-template-columns: repeat(
-auto-fit,
-minmax(220px, 1fr)
-);
-gap: 12px;
-}
-
-.card {
-border: 1px solid #e4eaf2;
-border-radius: 9px;
-padding: 12px;
-background: white;
-overflow-wrap: anywhere;
-}
-
-a {
-color: #0759b7;
-}
-
-input, textarea {
-width: 100%;
-padding: 11px;
-border: 1px solid #bdc9d8;
-border-radius: 7px;
-margin: 6px 0 12px;
-font: inherit;
-}
-
-button, .btn {
-display: inline-block;
-border: 0;
-background: #0759b7;
-color: white;
-padding: 10px 15px;
-border-radius: 7px;
-text-decoration: none;
-cursor: pointer;
-font: inherit;
-}
-
-.danger {
-background: #b42318;
-}
-
-.muted {
-color: #637083;
-font-size: 13px;
-}
-
-footer {
-text-align: center;
-padding: 25px;
-color: #657084;
-}
-
-.answer {
-color: #087443;
-font-weight: bold;
-}
-
-"""
-
-HEADER = """
-
-<header>    
-<div class="wrap">    <div class="brand">📘 Bhai Ki News</div>    <div class="tag">    
-News • Free Study • GK • Electrical    
-</div>    <nav>    <a href="/">Home</a>
-<a href="/news">News</a>
-<a href="/gk">Daily GK</a>
-<a href="/formulas">Electrical Formulas</a>
-<a href="/library">Free Library</a>
-<a href="/notes">Notes</a>
-<a href="/about">About</a>
-<a href="/contact">Contact</a>
-
-</nav>    
-</div>    
-</header>    """
-
-FOOTER = """
-
-<footer>    © {{ year }} Bhai Ki News · पढ़ें, सीखें और आगे बढ़ें
-
-<br>    <a href="/privacy">Privacy Policy</a>
-·
-<a href="/admin">Admin</a>
-
-</footer>    """
-
-def page(title, content):
-
-template = """    
-
-<!doctype html>    
-
-<html lang="hi">    
-
-<head>    
-
-<meta charset="utf-8">    
-
-<meta name="viewport"    
-content="width=device-width,initial-scale=1">    
-
-<title>{{ title }} | {{ site_name }}</title>    
-
-<meta name="description"    
-content="Bhai Ki News पर हिंदी समाचार, GK, Electrical Engineering formulas और free study material पढ़ें।">    
-
-<style>{{ css|safe }}</style>    
-
-</head>    
-
-<body>    
-
-""" + HEADER + """    
-
-<main class="wrap">    
-
-""" + content + """    
-
-</main>    
-
-""" + FOOTER + """    
-
-</body>    
-</html>    
-
-"""    
-
-return render_template_string(    
-
-    template,    
-    title=title,    
-    css=CSS,    
-    year=datetime.now(TZ).year,    
-    site_name=SITE_NAME    
-
-)
-
-=====================================================
-
-ARTICLE CARDS
-
-=====================================================
-
-def article_cards():
-
-with db() as con:    
-
-    rows = con.execute(    
-        "SELECT * FROM articles ORDER BY id DESC LIMIT 20"    
-    ).fetchall()    
-
-if not rows:    
-
-    return "<p>अभी कोई नया लेख प्रकाशित नहीं हुआ है।</p>"    
-
-out = ""    
-
-for row in rows:    
-
-    out += (    
-
-        '<div class="card"><h3><a href="/article/'    
-        + str(row["id"])    
-        + '">'    
-        + html.escape(row["title"])    
-        + "</a></h3><p class='muted'>"    
-        + html.escape(row["created_at"])    
-        + "</p><p>"    
-        + html.escape(row["body"][:180])    
-        + "...</p></div>"    
-
-    )    
-
-return '<div class="grid">' + out + "</div>"
-
-=====================================================
-
-HOME PAGE
-
-=====================================================
-
-@app.route("/")
-def home():
-
-question, answer = daily_item(GK)    
-
-formula_name, formula_value = daily_item(FORMULAS)    
-
-news = fetch_news()[:6]    
-
-news_html = ""    
-
-for item in news:    
-
-    news_html += (    
-
-        '<div class="card"><b>'    
-        + html.escape(item["category"])    
-        + '</b><br><a href="'    
-        + html.escape(item["link"], quote=True)    
-        + '" target="_blank" rel="noopener noreferrer">'    
-        + html.escape(item["title"])    
-        + '</a><p class="muted">'    
-        + html.escape(item["date"])    
-        + "</p></div>"    
-
-    )    
-
-if not news_html:    
-
-    news_html = (    
-        "<p>अभी समाचार लोड नहीं हो पाए। "    
-        "कुछ देर बाद फिर प्रयास करें।</p>"    
-    )    
-
-content = f"""    
-
-<section class="box">    
-
-<h1>स्वागत है Bhai Ki News पर</h1>    
-
-<p>    
-यहाँ हिंदी समाचार, सामान्य ज्ञान,    
-Electrical Engineering formulas    
-और पढ़ाई से जुड़ी सामग्री मिलेगी।    
-</p>    
-
-</section>    
-
-
-<section class="box">    
-
-<h2>🧠 आज का GK प्रश्न</h2>    
-
-<p>{html.escape(question)}</p>    
-
-<p class="answer">    
-उत्तर: {html.escape(answer)}    
-</p>    
-
-<a class="btn" href="/gk">और GK पढ़ें</a>    
-
-</section>    
-
-
-<section class="box">    
-
-<h2>⚡ आज का Electrical Formula</h2>    
-
-<p><b>{html.escape(formula_name)}</b></p>    
-
-<p class="answer">    
-{html.escape(formula_value)}    
-</p>    
-
-<a class="btn" href="/formulas">सभी Formula देखें</a>    
-
-</section>    
-
-
-<section class="box">    
-
-<h2>📰 ताज़ा समाचार</h2>    
-
-<div class="grid">{news_html}</div>    
-
-<p class="muted">    
-समाचार संबंधित RSS स्रोतों से दिखाए जाते हैं।    
-मूल खबर के लिए शीर्षक पर क्लिक करें।    
-</p>    
-
-</section>    
-
-
-<section class="box">    
-
-<h2>📚 नए लेख</h2>    
-
-{article_cards()}    
-
-</section>    
-
-"""    
-
-return page("Home", content)
-
-=====================================================
-
-NEWS PAGE
-
-=====================================================
-
-@app.route("/news")
-def news_page():
-
-items = fetch_news()    
-
-cards = ""    
-
-for item in items:    
-
-    cards += (    
-
-        '<div class="card"><b>'    
-        + html.escape(item["category"])    
-        + '</b><h3><a href="'    
-        + html.escape(item["link"], quote=True)    
-        + '" target="_blank" rel="noopener noreferrer">'    
-        + html.escape(item["title"])    
-        + '</a></h3><p class="muted">'    
-        + html.escape(item["date"])    
-        + "</p></div>"    
-
-    )    
-
-return page(    
-
-    "News",    
-
-    '<div class="box"><h1>📰 समाचार</h1>'    
-    '<div class="grid">'    
-    + (cards or "<p>समाचार अभी उपलब्ध नहीं हैं।</p>")    
-    + "</div></div>"    
-
-)
-
-=====================================================
-
-GK PAGE
-
-=====================================================
-
-@app.route("/gk")
-def gk_page():
-
-cards = ""    
-
-for i, (q, a) in enumerate(GK, 1):    
-
-    cards += (    
-
-        '<div class="card"><b>'    
-        + str(i)    
-        + ". "    
-        + html.escape(q)    
-        + '</b><p class="answer">उत्तर: '    
-        + html.escape(a)    
-        + "</p></div>"    
-
-    )    
-
-return page(    
-
-    "Daily GK",    
-
-    '<div class="box"><h1>🧠 सामान्य ज्ञान</h1>'    
-    '<div class="grid">'    
-    + cards    
-    + "</div></div>"    
-
-)
-
-=====================================================
-
-FORMULAS PAGE
-
-=====================================================
-
-@app.route("/formulas")
-def formulas_page():
-
-cards = ""    
-
-for i, (name, formula) in enumerate(FORMULAS, 1):    
-
-    cards += (    
-
-        '<div class="card"><b>'    
-        + str(i)    
-        + ". "    
-        + html.escape(name)    
-        + '</b><p class="answer">'    
-        + html.escape(formula)    
-        + "</p></div>"    
-
-    )    
-
-return page(    
-
-    "Electrical Formulas",    
-
-    '<div class="box"><h1>⚡ Electrical Engineering Formulas</h1>'    
-    '<div class="grid">'    
-    + cards    
-    + "</div></div>"    
-
-)
-
-=====================================================
-
-FREE LIBRARY
-
-=====================================================
-
-@app.route("/library")
-def library_page():
-
-content = """    
-
-<div class="box">    
-
-<h1>📚 Free Library</h1>    
-
-<p>    
-यहाँ उपयोगी शैक्षणिक वेबसाइटों के लिंक दिए गए हैं।    
-</p>    
-
-<div class="grid">    
-
-<div class="card">    
-<h3>NCERT</h3>    
-<a href="https://ncert.nic.in/"    
-target="_blank" rel="noopener noreferrer">    
-Official NCERT Website    
-</a>    
-</div>    
-
-<div class="card">    
-<h3>SWAYAM</h3>    
-<a href="https://swayam.gov.in/"    
-target="_blank" rel="noopener noreferrer">    
-Free Online Courses    
-</a>    
-</div>    
-
-<div class="card">    
-<h3>e-PG Pathshala</h3>    
-<a href="https://epgp.inflibnet.ac.in/"    
-target="_blank" rel="noopener noreferrer">    
-Study Material    
-</a>    
-</div>    
-
-<div class="card">    
-<h3>DIKSHA</h3>    
-<a href="https://diksha.gov.in/"    
-target="_blank" rel="noopener noreferrer">    
-Learning Resources    
-</a>    
-</div>    
-
-</div>    
-</div>    
-
-"""    
-
-return page("Free Library", content)
-
-=====================================================
-
-NOTES
-
-=====================================================
-
-@app.route("/notes")
-def notes_page():
-
-return page("Notes", """    
-
-<div class="box">    
-
-<h1>📝 Study Notes</h1>    
-
-<p>    
-इस सेक्शन में Electrical Engineering,    
-GK और प्रतियोगी परीक्षाओं से जुड़े नोट्स    
-प्रकाशित किए जा सकते हैं।    
-</p>    
-
-<p>    
-नए लेख देखने के लिए    
-<a href="/">Home Page</a> par jaayein.</p></div>""")
-
-=====================================================
-
-ARTICLE READ
-
-=====================================================
-
-@app.route("/article/int:article_id")
-def article_page(article_id):
-with db() as con:
-row = con.execute("SELECT * FROM articles WHERE id=?", (article_id,)).fetchone()
-if not row:
-abort(404)
-content = (
-'<div class="box"><h1>' + html.escape(row["title"]) + '</h1><p class="muted">' +
-html.escape(row["created_at"]) + '</p><div style="white-space:pre-wrap">' +
-html.escape(row[
+# =====================================================
+# ARTICLES
+# =====================================================
+
+MY_NEW_ARTICLES = [
+
+    (
+        "Math - 11 se Guna Trick",
+        "Math",
+        "23 x 11 = 253. 2 aur 3 ko alag karo, beech me 2+3=5 daal do!"
+    ),
+
+    (
+        "Science - Aasman Neela Kyu?",
+        "Science",
+        "Suraj ki roshni me kai rang hote hain. Vayumandal me neeli roshni ka prakirnan zyada hota hai."
+    ),
+
+    (
+        "Hindi - Mera Gaon Nibandh",
+        "Hindi",
+        "Mera gaon mera garv hai. Yaha ke log ek dusre ki madad karte hain."
+    ),
+
+    (
+        "Mehnat Kabhi Bekar Nahi Jaati",
+        "Article",
+        "Mehnat aur lagan se seekhna jari rakho!"
+    )
+
+]
+
+
+# =====================================================
+# DESIGN
+# =====================================================
+
+def style():
+
+    return """
+    <style>
+
+    * {
+        box-sizing: border-box;
+    }
+
+    body {
+        font-family: Arial, sans-serif;
+        background: #f2f2f2;
+        margin: 0;
+        color: #222;
+    }
+
+    .header {
+        background: #d60000;
+        color: white;
+        padding: 20px;
+        text-align: center;
+    }
+
+    .header h1 {
+        margin: 0;
+        font-size: 32px;
+    }
+
+    .live {
+        background: yellow;
+        color: black;
+        padding: 3px 10px;
+        border-radius: 20px;
+        font-weight: bold;
+    }
+
+    .nav {
+        display: flex;
+        gap: 8px;
+        justify-content: center;
+        flex-wrap: wrap;
+        margin-top: 15px;
+    }
+
+    .nav a {
+        background: white;
+        color: #d60000;
+        padding: 9px 14px;
+        border-radius: 20px;
