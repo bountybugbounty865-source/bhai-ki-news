@@ -20,11 +20,10 @@ abort, render_template_string
 
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-=====================================================
+# ==========================================
+# BHAI KI NEWS - COMPLETE FLASK APPLICATION
 
-BHAI KI NEWS - COMPLETE FLASK APPLICATION
-
-=====================================================
+# ==========================================
 
 app = Flask(__name__)
 
