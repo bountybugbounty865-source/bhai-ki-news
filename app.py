@@ -78,8 +78,13 @@ FORMULAS = [
 ("11 se Guna", "23x11 = 253 Trick"),
 ]
 LIBRARY = {
-"📚 NCERT Books": [("Class 10 Maths", "https://ncert.nic.in/"), ("Class 10 Science", "https://ncert.nic.in/")],
+"📚 NCERT Books": [("Class 10 Maths", "https://ncert.nic.in/"), ("Class 10 Science", "https://ncert.nic.in/"), ("Class 10 English", "https://ncert.nic.in/")],
 "📝 Previous Paper": [("UP Board Paper", "https://upmsp.edu.in/"), ("CBSE Paper", "https://cbse.gov.in/")],
+"📖 English Grammar": [("Tense Trick - Full Notes", "https://ncert.nic.in/"), ("Active Passive", "https://ncert.nic.in/"), ("Letter Writing", "https://ncert.nic.in/")],
+"💻 Computer": [("Computer Kya Hai?", "https://ncert.nic.in/"), ("MS Word / Excel", "https://ncert.nic.in/"), ("Internet Aur Email", "https://ncert.nic.in/")],
+"🌍 SST - Itihas / Bhugol": [("Bharat Ka Itihas", "https://ncert.nic.in/"), ("Bharat Ka Bhugol", "https://ncert.nic.in/"), ("Samvidhan - Constitution", "https://ncert.nic.in/")],
+"🧠 Daily GK + Formula": [("Aaj Ka GK", "/gk"), ("Maths Formula", "/gk"), ("Science Formula", "/gk")],
+"💼 Sarkari Naukri Notes": [("UP Police Notes", "https://upmsp.edu.in/"), ("SSC GD Notes", "https://ssc.gov.in/"), ("Railway Notes", "https://rrbapply.gov.in/")],
 }
 MY_NEW_ARTICLES = [
 ("Math - 11 se Guna Trick", "Math", "23 x 11 = 253. 2 aur 3 ko alag karo, beech me 2+3=5 daal do!"),
