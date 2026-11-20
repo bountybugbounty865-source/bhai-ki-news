@@ -1003,4 +1003,419 @@ def style():
         background: white;
         color: #d60000;
         padding: 9px 14px;
-        border-radius: 20px;
+        border-radius: 20px;        text-decoration: none;
+        font-weight: bold;
+    }
+
+    .search-box {
+        padding: 15px;
+        background: white;
+        position: sticky;
+        top: 0;
+        z-index: 9;
+    }
+
+    .search-row {
+        display: flex;
+        gap: 10px;
+    }
+
+    .search-row input {
+        flex: 1;
+        padding: 12px;
+        font-size: 16px;
+        border: 2px solid #d60000;
+        border-radius: 25px;
+    }
+
+    .search-row button {
+        background: #d60000;
+        color: white;
+        border: none;
+        padding: 12px 20px;
+        border-radius: 25px;
+        font-weight: bold;
+    }
+
+    h2 {
+        padding: 0 15px;
+        color: #d60000;
+    }
+
+    .grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 15px;
+        padding: 0 15px 20px;
+    }
+
+    .card {
+        background: white;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 2px 8px #ccc;
+    }
+
+    .card img {
+        width: 100%;
+        height: 180px;
+        object-fit: cover;
+    }
+
+    .card h3 {
+        font-size: 17px;
+        margin: 12px;
+    }
+
+    .card p {
+        font-size: 14px;
+        color: #555;
+        margin: 0 12px 10px;
+    }
+
+    .card a {
+        display: block;
+        color: #d60000;
+        font-weight: bold;
+        padding: 0 12px 12px;
+        text-decoration: none;
+    }
+
+    .box {
+        background: white;
+        margin: 15px;
+        padding: 20px;
+        border-radius: 12px;
+    }
+
+    .footer {
+        text-align: center;
+        padding: 20px;
+        color: gray;
+    }
+
+    .footer a {
+        color: #d60000;
+        text-decoration: none;
+        font-weight: bold;
+        margin: 0 8px;
+    }
+
+    input, textarea {
+        width: 100%;
+        padding: 12px;
+        margin: 8px 0;
+        border: 2px solid #ddd;
+        border-radius: 10px;
+        font-size: 16px;
+    }
+
+    .btn {
+        background: #d60000;
+        color: white;
+        border: none;
+        padding: 13px;
+        border-radius: 10px;
+        width: 100%;
+        font-weight: bold;
+        font-size: 16px;
+        cursor: pointer;
+    }
+
+    @media(max-width: 600px) {
+        .grid { grid-template-columns: 1fr; }
+        .header h1 { font-size: 27px; }
+    }
+
+    </style>
+    """
+
+def header():
+
+    s = get_stats()
+
+    return f"""
+    <div class="header">
+        <h1>{SITE_NAME}</h1>
+        <p><span class="live">LIVE</span> Sirf Kaam Ki Khabar + Free Padhai</p>
+        <p>Made by Priyanshu Singh | Lucknow</p>
+        <p style="background:black;color:white;display:inline-block;padding:5px 12px;border-radius:20px;font-size:13px">
+        Aaj Aaye: {s["today"]} | Total: {s["total"]}</p>
+        <div class="nav">
+            <a href="/">News</a>
+            <a href="/library">Padhai Library</a>
+            <a href="/gk">GK</a>
+            <a href="/about">About</a>
+            <a href="/admin">Admin</a>
+        </div>
+    </div>
+    """
+
+def footer():
+
+    return """
+    <div class="footer">
+        <a href="/">Home</a>
+        <a href="/library">Library</a>
+        <a href="/gk">GK</a>
+        <a href="/about">About</a>
+        <p>© BHAI KI NEWS | Made by Priyanshu Singh</p>
+    </div>
+    """
+
+def page(title, body):
+
+    return f"""<!doctype html>
+    <html lang="hi">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>{esc(title)} | {SITE_NAME}</title>
+        {style()}
+    </head>
+    <body>
+        {header()}
+        <main>{body}</main>
+        {footer()}
+    </body>
+    </html>
+    """
+
+def search_box():
+
+    return """
+    <div class="search-box">
+        <form action="/search" method="get">
+            <div class="search-row">
+                <input type="text" name="q" placeholder="Khabar search karo..." required>
+                <button type="submit">Search</button>
+            </div>
+        </form>
+        <div style="margin-top:10px">
+            <a href="/?cat=Top">🔥 Top</a> &nbsp;
+            <a href="/?cat=Cricket">🏏 Cricket</a> &nbsp;
+            <a href="/?cat=Naukri">💼 Naukri</a> &nbsp;
+            <a href="/?cat=Padhai">📚 Padhai</a>
+        </div>
+    </div>
+    """
+
+@app.route("/")
+def home():
+
+    cat = request.args.get("cat", "")
+    seen = set()
+    cards = ""
+
+    if cat:
+        for name, url in FEEDS.items():
+            if cat.lower() in name.lower():
+                cards += make_cards(get_cached_feed(name, url), seen, limit=20)
+    else:
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            fut = {n: ex.submit(get_cached_feed, n, u) for n, u in FEEDS.items()}
+            for n in FEEDS:
+                try:
+                    cards += make_cards(fut[n].result(), seen, limit=10)
+                except Exception:
+                    pass
+
+    note = get_today_note()
+    arts = get_articles()
+
+    my = ""
+    for a in arts[:6]:
+        my += f'<div class="card"><h3>{esc(a["title"])}</h3><p>{esc(a["category"])}</p><p>{esc(a["content"][:180])}</p></div>'
+
+    if not my:
+        for t, c, txt in MY_NEW_ARTICLES:
+            my += f'<div class="card"><h3>{esc(t)}</h3><p>{esc(c)}</p><p>{esc(txt)}</p></div>'
+
+    body = f"""
+    {search_box()}
+    <div class="box">
+        <h2>📝 Aaj Ka Note - {esc(note["type"])}</h2>
+        <h3>{esc(note["title"])}</h3>
+        <p>{esc(note["content"])}</p>
+    </div>
+    <h2>✍️ Mere Articles</h2>
+    <div class="grid">{my}</div>
+    <h2>📰 Taaza Khabar</h2>
+    <div class="grid">{cards or "<p>Abhi khabar load nahi hui</p>"}</div>
+    """
+
+    return page("Home", body)
+
+@app.route("/search")
+def search():
+
+    q = request.args.get("q", "").strip()
+
+    if not q:
+        return redirect(url_for("home"))
+
+    url = f"https://news.google.com/rss/search?q={urllib.parse.quote(q)}&hl=hi&gl=IN&ceid=IN:hi"
+    cards = make_cards(get_cached_feed("search", url), set(), limit=20)
+
+    body = f"""
+    {search_box()}
+    <h2>🔍 Search: {esc(q)}</h2>
+    <div class="grid">{cards or "<p>Kuch nahi mila</p>"}</div>
+    """
+
+    return page("Search", body)
+
+@app.route("/gk")
+def gk():
+
+    gk_html = ""
+    for q, a in GK_LIST:
+        gk_html += f'<div class="card"><h3>{esc(q)}</h3><p><b>Uttar:</b> {esc(a)}</p></div>'
+
+    f_html = ""
+    for n, f in FORMULAS:
+        f_html += f'<div class="card"><h3>{esc(n)}</h3><p><b>{esc(f)}</b></p></div>'
+
+    body = f"""
+    <h2>🧠 Daily GK</h2>
+    <div class="grid">{gk_html}</div>
+    <h2>⚡ Formulas</h2>
+    <div class="grid">{f_html}</div>
+    """
+
+    return page("GK + Formula", body)
+
+@app.route("/library")
+def library():
+
+    out = '<h2>📚 Padhai Library</h2>'
+
+    for cat, items in LIBRARY.items():
+        out += f"<h2>{esc(cat)}</h2><div class='grid'>"
+        for title, link in items:
+            out += f'<div class="card"><h3>{esc(title)}</h3><a href="{esc(link)}" target="_blank" rel="noopener noreferrer">Open</a></div>'
+        out += "</div>"
+
+    return page("Library", out)
+
+@app.route("/about")
+def about():
+
+    return page("About", """
+    <div class="box">
+        <h2>About Bhai Ki News</h2>
+        <p>Bhai Ki News - Sirf kaam ki khabar + Free Padhai. Made by Priyanshu Singh, Lucknow.</p>
+        <p>Yaha Top Khabar, Cricket, Naukri, Padhai, Daily GK aur Formulas milte hai.</p>
+    </div>
+    """)
+
+@app.route("/health")
+def health():
+
+    return "OK", 200
+
+@app.route("/admin", methods=["GET", "POST"])
+def admin():
+
+    if request.method == "POST":
+
+        check_csrf()
+
+        pw = request.form.get("password", "")
+
+        if ADMIN_PASSWORD and hmac.compare_digest(pw, ADMIN_PASSWORD):
+            session["admin"] = True
+            session.permanent = True
+            return redirect(url_for("admin"))
+
+        return page("Admin", f"""
+        <div class="box">
+            <p>Galat password!</p>
+            <form method="post">{csrf_input()}
+            <input type="password" name="password" placeholder="Admin Password" required>
+            <button class="btn" type="submit">Login</button></form>
+        </div>
+        """)
+
+    if not admin_required():
+
+        return page("Admin Login", f"""
+        <div class="box">
+            <h2>Admin Login</h2>
+            <form method="post">{csrf_input()}
+            <input type="password" name="password" placeholder="Admin Password" required>
+            <button class="btn" type="submit">Login</button></form>
+        </div>
+        """)
+
+    arts = get_articles()
+    st = get_stats()
+
+    rows = ""
+    for a in arts:
+        rows += f'<div class="box"><b>{esc(a["title"])}</b> - {esc(a["category"])}<form method="post" action="/admin/delete/{a["id"]}">{csrf_input()}<button class="btn" type="submit">Delete</button></form></div>'
+
+    body = f"""
+    <div class="box">
+        <h2>Admin Panel</h2>
+        <p>Total: {st["total"]} | Aaj: {st["today"]}</p>
+        <form method="post" action="/admin/add">{csrf_input()}
+        <input name="title" placeholder="Title" required>
+        <input name="category" placeholder="Category" required>
+        <textarea name="content" placeholder="Content" required></textarea>
+        <button class="btn" type="submit">Add Article</button></form>
+        <p><a href="/admin/logout">Logout</a></p>
+    </div>
+    <h2>Mere Articles</h2>
+    {rows or "<div class=box>Koi article nahi hai.</div>"}
+    """
+
+    return page("Admin", body)
+
+@app.route("/admin/add", methods=["POST"])
+def admin_add():
+
+    if not admin_required():
+        return redirect(url_for("admin"))
+
+    check_csrf()
+
+    t = request.form.get("title", "").strip()[:200]
+    c = request.form.get("category", "").strip()[:100]
+    co = request.form.get("content", "").strip()[:5000]
+
+    if t and co:
+        add_article(t, c or "General", co)
+
+    return redirect(url_for("admin"))
+
+@app.route("/admin/delete/<int:article_id>", methods=["POST"])
+def admin_delete(article_id):
+
+    if not admin_required():
+        return redirect(url_for("admin"))
+
+    check_csrf()
+    delete_article(article_id)
+
+    return redirect(url_for("admin"))
+
+@app.route("/admin/logout")
+def admin_logout():
+
+    session.pop("admin", None)
+
+    return redirect(url_for("admin"))
+
+@app.errorhandler(404)
+def not_found(e):
+
+    return page("Not Found", '<div class="box"><h2>Page nahi mila</h2><p><a href="/">Home pe wapas jao</a></p></div>'), 404
+
+@app.errorhandler(403)
+def forbidden(e):
+
+    return page("Forbidden", '<div class="box"><h2>Galat request</h2><p><a href="/">Home pe wapas jao</a></p></div>'), 403
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
