@@ -85,7 +85,59 @@ LIBRARY = {
 "🌍 SST - Itihas / Bhugol": [("Bharat Ka Itihas", "https://ncert.nic.in/"), ("Bharat Ka Bhugol", "https://ncert.nic.in/"), ("Samvidhan - Constitution", "https://ncert.nic.in/")],
 "🧠 Daily GK + Formula": [("Aaj Ka GK", "/gk"), ("Maths Formula", "/gk"), ("Science Formula", "/gk")],
 "💼 Sarkari Naukri Notes": [("UP Police Notes", "https://upmsp.edu.in/"), ("SSC GD Notes", "https://ssc.gov.in/"), ("Railway Notes", "https://rrbapply.gov.in/")],
+}# ===== HYBRID DAILY NOTES SYSTEM =====
+# Tu yaha roj dalega - Ye sabse upar dikhega
+
+MY_MANUAL_NOTES = {
+    # Example - Isko badal ke apna dal de
+    # "aaj-ka-tense": {"title": "Tense Trick - Aaj Ka", "cat": "English", "content": "Aaj maine Tense padhaya... Present Simple = Daily kaam"},
 }
+
+# Automatic wala - Tu na dale to ye apne aap chalega - 30 Din ka
+AUTO_NOTES = [
+    {"title": "Aaj Ka GK - Bharat Ki Rajdhani", "cat": "GK", "content": "Bharat ki Rajdhani New Delhi hai. GK roj yaad karo."},
+    {"title": "Aaj Ka Vocab - 5 New Words", "cat": "English", "content": "1. Brave = Bahadur, 2. Honest = Imaandaar, 3. Quick = Tez, 4. Happy = Khush, 5. Strong = Mazboot"},
+    {"title": "Aaj Ka Formula - Ganit", "cat": "Maths", "content": "Aaj ka Formula: (a+b)2 = a2 + 2ab + b2 - Isko 5 baar likh ke yaad karo."},
+    {"title": "Aaj Ka Computer - CPU Kya Hai?", "cat": "Computer", "content": "CPU ko Computer ka Dimag kehte hai. CPU = Central Processing Unit."},
+    {"title": "Aaj Ka SST - Mugal Kal", "cat": "SST", "content": "Akbar ko Akbar The Great kehte hai. Usne Din-i-Ilahi chalaya tha."},
+    {"title": "Aaj Ka Current Affairs", "cat": "GK", "content": "Aaj ka Current Affairs - Roj Newspaper se 1 news yaha likhna hai."},
+    {"title": "Aaj Ka Motivation", "cat": "Motivation", "content": "Roj 1 Ghanta padhoge to 1 Saal me Top karoge. Aaj se shuru karo!"},
+]
+
+# Logic - Manual hai to Manual, nahi to Automatic
+import datetime
+def get_today_note():
+    if MY_MANUAL_NOTES:
+        # Sabse last wala manual note le lo
+        last_key = list(MY_MANUAL_NOTES.keys())[-1]
+        d = MY_MANUAL_NOTES[last_key]
+        return {"slug": last_key, "title": d["title"], "cat": d["cat"], "content": d["content"], "type": "Tera Wala 🔥"}
+    else:
+        day = datetime.date.today().timetuple().tm_yday
+        d = AUTO_NOTES[day % len(AUTO_NOTES)]
+        return {"slug": "auto", "title": d["title"], "cat": d["cat"], "content": d["content"], "type": "Automatic ✨"}
+
+@app.route("/notes/<slug>")
+def show_note(slug):
+    if slug in MY_MANUAL_NOTES:
+        d = MY_MANUAL_NOTES[slug]
+        note = {"title": d["title"], "cat": d["cat"], "content": d["content"]}
+    elif slug == "auto" or slug == "today":
+        note = get_today_note()
+    else:
+        # Auto me se dhoondho
+        note = get_today_note()
+    return f"""
+    <div style="max-width:700px;margin:20px auto;padding:20px;font-family:sans-serif">
+    <a href="/">← Back</a>
+    <h1>{note['title']}</h1>
+    <p style="color:#666">Category: {note['cat']}</p>
+    <hr>
+    <p style="font-size:18px;line-height:1.8">{note['content']}</p>
+    <br><a href="/" style="background:#2563eb;color:white;padding:10px 20px;border-radius:10px;text-decoration:none">Home Jao</a>
+    </div>
+    """
+# ===== END HYBRID SYSTEM =====
 MY_NEW_ARTICLES = [
 ("Math - 11 se Guna Trick", "Math", "23 x 11 = 253. 2 aur 3 ko alag karo, beech me 2+3=5 daal do!"),
 ("Science - Aasman Neela Kyu?", "Science", "Suraj ki roshni me 7 rang hote hai, Neela sabse zyada bikhar ta hai!"),
