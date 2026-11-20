@@ -105,7 +105,6 @@ AUTO_NOTES = [
 ]
 
 # Logic - Manual hai to Manual, nahi to Automatic
-import datetime
 def get_today_note():
     if MY_MANUAL_NOTES:
         # Sabse last wala manual note le lo
@@ -113,7 +112,7 @@ def get_today_note():
         d = MY_MANUAL_NOTES[last_key]
         return {"slug": last_key, "title": d["title"], "cat": d["cat"], "content": d["content"], "type": "Tera Wala 🔥"}
     else:
-        day = datetime.date.today().timetuple().tm_yday
+      day = datetime.now().timetuple().tm_yday
         d = AUTO_NOTES[day % len(AUTO_NOTES)]
         return {"slug": "auto", "title": d["title"], "cat": d["cat"], "content": d["content"], "type": "Automatic ✨"}
 
