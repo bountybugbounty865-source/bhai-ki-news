@@ -1,288 +1,1028 @@
-import feedparser, re, hashlib, urllib.parse, random, os, json
-from flask import Flask, request, redirect, url_for, session
-from datetime import datetime
+import os
+import re
+import hmac
+import html
+import time
+import sqlite3
+import secrets
+import hashlib
+import urllib.request
+import xml.etree.ElementTree as ET
 
-app = Flask(__name__)
-app.secret_key = os.environ.get("SECRET_KEY")
-ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
-if not app.secret_key or not ADMIN_PASSWORD:
-    raise RuntimeError("Security Environment Variables Missing!")
-app.config.update(
-    SESSION_COOKIE_HTTPONLY=True,
-    SESSION_COOKIE_SECURE=True,
-    SESSION_COOKIE_SAMESITE="Lax",
-    PERMANENT_SESSION_LIFETIME=1800
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from contextlib import contextmanager
+
+from flask import (
+Flask, request, redirect, url_for, session,
+abort, render_template_string
 )
-DATA_FILE = "bhai_data.json"
-def load_data():
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE) as f: return json.load(f)
-        except: pass
-    return {"total":0, "today":{}, "reads":{}, "my_articles":[]}
-def save_data(d):
-    with open(DATA_FILE,"w") as f: json.dump(d,f)
-FEEDS = {
-"🔥 Top Khabar": "https://news.google.com/rss?hl=hi&gl=IN&ceid=IN:hi",
-"🏏 Cricket": "https://news.google.com/rss/search?q=Cricket&hl=hi&gl=IN&ceid=IN:hi",
-"💼 Naukri": "https://news.google.com/rss/search?q=Sarkari Naukri&hl=hi&gl=IN&ceid=IN:hi",
-"📚 Padhai": "https://news.google.com/rss/search?q=Exam Padhai&hl=hi&gl=IN&ceid=IN:hi",
+
+from werkzeug.middleware.proxy_fix import ProxyFix
+
+=====================================================
+
+BHAI KI NEWS - COMPLETE FLASK APPLICATION
+
+=====================================================
+
+app = Flask(name)
+
+app.wsgi_app = ProxyFix(
+app.wsgi_app,
+x_for=1,
+x_proto=1,
+x_host=1
+)
+
+SECRET_KEY = os.environ.get("SECRET_KEY", "")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
+
+if len(SECRET_KEY) < 32:
+raise RuntimeError(
+"SECRET_KEY kam-se-kam 32 characters ka hona chahiye."
+)
+
+if len(ADMIN_PASSWORD) < 12:
+raise RuntimeError(
+"ADMIN_PASSWORD kam-se-kam 12 characters ka hona chahiye."
+)
+
+app.secret_key = SECRET_KEY
+
+app.config.update(
+SESSION_COOKIE_HTTPONLY=True,
+SESSION_COOKIE_SAMESITE="Lax",
+SESSION_COOKIE_SECURE=(
+os.environ.get("COOKIE_SECURE", "true").lower() == "true"
+),
+PERMANENT_SESSION_LIFETIME=60 * 60 * 8,
+MAX_CONTENT_LENGTH=1 * 1024 * 1024
+)
+
+TZ = ZoneInfo("Asia/Kolkata")
+
+BASE_DIR = os.path.dirname(os.path.abspath(file))
+
+DATA_DIR = (
+"/data"
+if os.path.isdir("/data") and os.access("/data", os.W_OK)
+else os.path.join(BASE_DIR, "instance")
+)
+
+os.makedirs(DATA_DIR, exist_ok=True)
+
+DB_PATH = os.path.join(DATA_DIR, "bhai_news.db")
+
+SITE_NAME = "Bhai Ki News"
+SITE_TAGLINE = "News • Free Study • GK • Electrical"
+
+=====================================================
+
+DATABASE
+
+=====================================================
+
+@contextmanager
+def db():
+
+conn = sqlite3.connect(    
+    DB_PATH,    
+    timeout=20    
+)    
+
+conn.row_factory = sqlite3.Row    
+
+try:    
+    conn.execute("PRAGMA journal_mode=WAL")    
+    conn.execute("PRAGMA foreign_keys=ON")    
+
+    yield conn    
+
+    conn.commit()    
+
+finally:    
+    conn.close()
+
+def init_db():
+
+with db() as con:    
+
+    con.executescript("""    
+
+    CREATE TABLE IF NOT EXISTS articles (    
+        id INTEGER PRIMARY KEY AUTOINCREMENT,    
+        title TEXT NOT NULL,    
+        body TEXT NOT NULL,    
+        created_at TEXT NOT NULL    
+    );    
+
+    CREATE TABLE IF NOT EXISTS visits (    
+        id INTEGER PRIMARY KEY AUTOINCREMENT,    
+        visitor_hash TEXT NOT NULL,    
+        visited_at TEXT NOT NULL,    
+        path TEXT NOT NULL    
+    );    
+
+    CREATE INDEX IF NOT EXISTS idx_visits_date    
+    ON visits(visited_at);    
+
+    CREATE INDEX IF NOT EXISTS idx_visits_hash    
+    ON visits(visitor_hash);    
+
+    CREATE TABLE IF NOT EXISTS login_attempts (    
+        attempt_key TEXT PRIMARY KEY,    
+        count INTEGER NOT NULL,    
+        first_at REAL NOT NULL,    
+        blocked_until REAL NOT NULL DEFAULT 0    
+    );    
+
+    """)
+
+init_db()
+
+=====================================================
+
+CSRF SECURITY
+
+=====================================================
+
+def csrf_token():
+
+token = session.get("_csrf")    
+
+if not token:    
+    token = secrets.token_urlsafe(32)    
+    session["_csrf"] = token    
+
+return token
+
+def check_csrf():
+
+sent = request.form.get("_csrf", "")    
+saved = session.get("_csrf", "")    
+
+if (    
+    not sent    
+    or not saved    
+    or not hmac.compare_digest(sent, saved)    
+):    
+    abort(400)
+
+@app.context_processor
+def inject_globals():
+
+return {    
+    "csrf_token": csrf_token,    
+    "site_name": SITE_NAME    
 }
-GK_LIST = [
-("Lal Kila kaha hai?", "Delhi me"),
-("Taj Mahal kaha hai?", "Agra me"),
-("Aasman Neela kyu hai?", "Neela rang zyada bikharne se"),
-("23 x 11 = ?", "253 - Trick se!"),
-("Bharat ka Rashtriya Pashu kaun hai?", "Bagh"),
-("Bharat ki Rajdhani kya hai?", "New Delhi"),
-("Bharat ka Rashtriya Pakshi kaunsa hai?", "Mor"),
-("Ganga Nadi kaha se nikalti hai?", "Gangotri se"),
-("Bharat ka sabse bada Rajya kaunsa hai?", "Rajasthan"),
-("Computer ka Pita kise kehte hai?", "Charles Babbage"),
-("Bharat ke Pehle Rashtrapati kaun the?", "Dr. Rajendra Prasad"),
-("UP ki Rajdhani kya hai?", "Lucknow"),
-("Qutub Minar kaha hai?", "Delhi me"),
-("Bharat ka Rashtriya Phool kaunsa hai?", "Kamal"),
-("Bharat ka Rashtriya Khel kaunsa hai? (Unofficial)", "Hockey mana jata hai"),
-("Mahatma Gandhi ka janm kab hua?", "2 October 1869"),
-("Bharat ko Azadi kab mili?", "15 August 1947"),
-("Bharat ka Samvidhan kab lagu hua?", "26 January 1950"),
-("Bharat ka sabse lamba pahaad kaunsa hai?", "K2 - Godwin Austin"),
-("Bharat ki sabse lambi nadi kaunsi hai?", "Ganga"),
-("Tiranga me kitne rang hote hai?", "3 - Kesar, Safed, Hara + Ashok Chakra"),
-("Ashok Chakra me kitni teeliya hoti hai?", "24"),
-("Bharat ka Rashtriya Gaan kaunsa hai?", "Jana Gana Mana"),
-("Jana Gana Mana kisne likha?", "Rabindranath Tagore"),
-("Bharat ka Sabse Bada Sheher kaunsa hai?", "Mumbai"),
-("Lucknow kis nadi ke kinare hai?", "Gomti Nadi"),
-("Bharat me kitne Rajya hai?", "28 Rajya + 8 Kendra Shasit Pradesh"),
-("Chand par pehla kadam kisne rakha?", "Neil Armstrong"),
-("Bharat ka Pehla Pradhan Mantri kaun tha?", "Pandit Jawaharlal Nehru"),
-("Bharat ka Pehla Upgrah kaunsa tha?", "Aryabhatta"),
-("1 Minute me kitne Second hote hai?", "60 Second"),
+
+=====================================================
+
+SECURITY HEADERS
+
+=====================================================
+
+@app.after_request
+def security_headers(response):
+
+response.headers["X-Content-Type-Options"] = "nosniff"    
+
+response.headers["X-Frame-Options"] = "DENY"    
+
+response.headers["Referrer-Policy"] = (    
+    "strict-origin-when-cross-origin"    
+)    
+
+response.headers["Permissions-Policy"] = (    
+    "camera=(), microphone=(), geolocation=()"    
+)    
+
+response.headers["Content-Security-Policy"] = (    
+    "default-src 'self' https: data:; "    
+    "style-src 'self' 'unsafe-inline' https:; "    
+    "img-src 'self' https: data:; "    
+    "base-uri 'self'; "    
+    "form-action 'self'; "    
+    "frame-ancestors 'none'"    
+)    
+
+if request.is_secure:    
+
+    response.headers["Strict-Transport-Security"] = (    
+        "max-age=31536000; includeSubDomains"    
+    )    
+
+return response
+
+=====================================================
+
+VISITOR COUNTER
+
+=====================================================
+
+def visitor_hash():
+
+raw = (    
+    (request.remote_addr or "")    
+    + "|"    
+    + request.headers.get("User-Agent", "")[:250]    
+)    
+
+return hashlib.sha256(    
+    (SECRET_KEY + raw).encode()    
+).hexdigest()
+
+def record_visit():
+
+if request.method != "GET":    
+    return    
+
+if request.path.startswith(("/static", "/health")):    
+    return    
+
+ua = request.headers.get("User-Agent", "").lower()    
+
+if any(    
+    bot in ua    
+    for bot in ("bot", "spider", "crawler", "slurp")    
+):    
+    return    
+
+with db() as con:    
+
+    con.execute(    
+        """    
+        INSERT INTO visits    
+        (visitor_hash, visited_at, path)    
+        VALUES (?, ?, ?)    
+        """,    
+        (    
+            visitor_hash(),    
+            datetime.now(TZ).isoformat(timespec="seconds"),    
+            request.path[:250]    
+        )    
+    )
+
+@app.before_request
+def count_visit():
+
+try:    
+    record_visit()    
+
+except sqlite3.Error:    
+
+    app.logger.exception(    
+        "Visitor counter database error"    
+    )
+
+=====================================================
+
+DAILY GK
+
+=====================================================
+
+GK = [
+
+("भारत का संविधान कब लागू हुआ?", "26 जनवरी 1950"),    
+("भारत की राजधानी क्या है?", "नई दिल्ली"),    
+("उत्तर प्रदेश की राजधानी क्या है?", "लखनऊ"),    
+("भारत का राष्ट्रीय जलीय जीव कौन है?", "गंगा डॉल्फिन"),    
+("विद्युत धारा की SI इकाई क्या है?", "एम्पियर"),    
+("ओम का नियम क्या है?", "V = I × R"),    
+("भारत का सबसे बड़ा राज्य कौन-सा है?", "राजस्थान"),    
+("सौरमंडल का सबसे बड़ा ग्रह कौन-सा है?", "बृहस्पति"),    
+("रक्त पंप करने वाला अंग कौन-सा है?", "हृदय"),    
+("पृथ्वी का प्राकृतिक उपग्रह कौन है?", "चंद्रमा"),    
+("भारत का राष्ट्रीय पशु कौन है?", "बाघ"),    
+("कंप्यूटर का मस्तिष्क किसे कहते हैं?", "CPU"),    
+("पानी का रासायनिक सूत्र क्या है?", "H₂O"),    
+("पौधे प्रकाश संश्लेषण में कौन-सी गैस लेते हैं?", "कार्बन डाइऑक्साइड"),    
+("शिक्षक दिवस कब मनाया जाता है?", "5 सितंबर"),    
+("भारत का राष्ट्रीय गान किसने लिखा?", "रवीन्द्रनाथ टैगोर"),    
+("विद्युत शक्ति की SI इकाई क्या है?", "वाट"),    
+("ट्रांसफॉर्मर किस सिद्धांत पर काम करता है?", "पारस्परिक विद्युत चुंबकीय प्रेरण"),    
+("भारत का पहला उपग्रह कौन-सा था?", "आर्यभट्ट"),    
+("विश्व पर्यावरण दिवस कब मनाया जाता है?", "5 जून"),    
+("भारत का राष्ट्रीय फूल कौन-सा है?", "कमल")
+
 ]
+
+=====================================================
+
+ELECTRICAL FORMULAS
+
+=====================================================
+
 FORMULAS = [
-("(a+b)²", "(a² + 2ab + b²)"),
-("Area - Circle", "πr²"),
-("Speed", "Distance / Time"),
-("11 se Guna", "23x11 = 253 Trick"),
+
+("ओम का नियम", "V = I × R"),    
+("विद्युत शक्ति", "P = V × I"),    
+("विद्युत ऊर्जा", "E = P × t"),    
+("प्रतिरोध", "R = V / I"),    
+("धारा", "I = Q / t"),    
+("आवेश", "Q = I × t"),    
+("श्रृंखला प्रतिरोध", "R = R₁ + R₂ + R₃"),    
+("समानांतर प्रतिरोध", "R = (R₁ × R₂) / (R₁ + R₂)"),    
+("AC आवृत्ति", "f = 1 / T"),    
+("कोणीय आवृत्ति", "ω = 2πf"),    
+("ट्रांसफॉर्मर टर्न्स अनुपात", "V₁ / V₂ = N₁ / N₂"),    
+("ट्रांसफॉर्मर दक्षता", "η = (Output / Input) × 100%"),    
+("सिंक्रोनस गति", "Ns = 120f / P"),    
+("पावर फैक्टर", "cos φ = P / S"),    
+("तीन-फेज शक्ति", "P = √3 × VL × IL × cos φ"),    
+("चुंबकीय फ्लक्स", "Φ = B × A"),    
+("कैपेसिटेंस", "C = Q / V"),    
+("इंडक्टिव रिएक्टेंस", "XL = 2πfL"),    
+("कैपेसिटिव रिएक्टेंस", "XC = 1 / (2πfC)"),    
+("विद्युत बिल ऊर्जा", "यूनिट = Power (kW) × Time (h)")
+
 ]
-LIBRARY = {
-"📚 NCERT Books": [("Class 10 Maths", "https://ncert.nic.in/"), ("Class 10 Science", "https://ncert.nic.in/"), ("Class 10 English", "https://ncert.nic.in/")],
-"📝 Previous Paper": [("UP Board Paper", "https://upmsp.edu.in/"), ("CBSE Paper", "https://cbse.gov.in/")],
-"📖 English Grammar": [("Tense Trick - Full Notes", "https://ncert.nic.in/"), ("Active Passive", "https://ncert.nic.in/"), ("Letter Writing", "https://ncert.nic.in/")],
-"💻 Computer": [("Computer Kya Hai?", "https://ncert.nic.in/"), ("MS Word / Excel", "https://ncert.nic.in/"), ("Internet Aur Email", "https://ncert.nic.in/")],
-"🌍 SST - Itihas / Bhugol": [("Bharat Ka Itihas", "https://ncert.nic.in/"), ("Bharat Ka Bhugol", "https://ncert.nic.in/"), ("Samvidhan - Constitution", "https://ncert.nic.in/")],
-"🧠 Daily GK + Formula": [("Aaj Ka GK", "/gk"), ("Maths Formula", "/gk"), ("Science Formula", "/gk")],
-"💼 Sarkari Naukri Notes": [("UP Police Notes", "https://upmsp.edu.in/"), ("SSC GD Notes", "https://ssc.gov.in/"), ("Railway Notes", "https://rrbapply.gov.in/")],
+
+def daily_item(items):
+
+index = datetime.now(TZ).date().toordinal() % len(items)    
+
+return items[index]
+
+=====================================================
+
+RSS NEWS
+
+=====================================================
+
+RSS_FEEDS = [
+
+(    
+    "BBC हिंदी",    
+    "https://feeds.bbci.co.uk/hindi/rss.xml"    
+),    
+
+(    
+    "Google News",    
+    "https://news.google.com/rss?hl=hi&gl=IN&ceid=IN:hi"    
+)
+
+]
+
+_news_cache = {
+"time": 0,
+"items": []
 }
-MY_MANUAL_NOTES = {}
-AUTO_NOTES = [
-    {"title": "Aaj Ka GK - Bharat Ki Rajdhani", "cat": "GK", "content": "Bharat ki Rajdhani New Delhi hai. GK roj yaad karo."},
-    {"title": "Aaj Ka Vocab - 5 New Words", "cat": "English", "content": "1. Brave = Bahadur, 2. Honest = Imaandaar, 3. Quick = Tez, 4. Happy = Khush, 5. Strong = Mazboot"},
-    {"title": "Aaj Ka Formula - Ganit", "cat": "Maths", "content": "Aaj ka Formula: (a+b)2 = a2 + 2ab + b2 - Isko 5 baar likh ke yaad karo."},
-    {"title": "Aaj Ka Computer - CPU Kya Hai?", "cat": "Computer", "content": "CPU ko Computer ka Dimag kehte hai. CPU = Central Processing Unit."},
-    {"title": "Aaj Ka SST - Mugal Kal", "cat": "SST", "content": "Akbar ko Akbar The Great kehte hai. Usne Din-i-Ilahi chalaya tha."},
-    {"title": "Aaj Ka Current Affairs", "cat": "GK", "content": "Aaj ka Current Affairs - Roj Newspaper se 1 news yaha likhna hai."},
-    {"title": "Aaj Ka Motivation", "cat": "Motivation", "content": "Roj 1 Ghanta padhoge to 1 Saal me Top karoge. Aaj se shuru karo!"},
-]
-def get_today_note():
-    if MY_MANUAL_NOTES:
-        last_key = list(MY_MANUAL_NOTES.keys())[-1]
-        d = MY_MANUAL_NOTES[last_key]
-        return {"slug": last_key, "title": d["title"], "cat": d["cat"], "content": d["content"], "type": "Tera Wala"}
-    else:
-        day = datetime.now().timetuple().tm_yday
-        d = AUTO_NOTES[day % len(AUTO_NOTES)]
-        return {"slug": "auto", "title": d["title"], "cat": d["cat"], "content": d["content"], "type": "Automatic"}
-@app.route("/notes/<slug>")
-def show_note(slug):
-    if slug in MY_MANUAL_NOTES:
-        d = MY_MANUAL_NOTES[slug]
-        note = {"title": d["title"], "cat": d["cat"], "content": d["content"]}
-    else:
-        note = get_today_note()
-    return f"""
-    <div style="max-width:700px;margin:20px auto;padding:20px;font-family:sans-serif">
-    <a href="/">Back</a>
-    <h1>{note['title']}</h1>
-    <p style="color:#666">Category: {note['cat']}</p>
-    <hr>
-    <p style="font-size:18px;line-height:1.8">{note['content']}</p>
-    <br><a href="/" style="background:#2563eb;color:white;padding:10px 20px;border-radius:10px;text-decoration:none">Home Jao</a>
-    </div>
-    """
-MY_NEW_ARTICLES = [
-("Math - 11 se Guna Trick", "Math", "23 x 11 = 253. 2 aur 3 ko alag karo, beech me 2+3=5 daal do!"),
-("Science - Aasman Neela Kyu?", "Science", "Suraj ki roshni me 7 rang hote hai, Neela sabse zyada bikhar ta hai!"),
-("Hindi - Mera Gaon Nibandh", "Hindi", "Mera gaon mera garv hai. Yaha ki hawa saaf hai, log madad karte hai!"),
-("Best Article - Mehnat Kabhi Bekar Nahi Jaati", "Article", "Kanpur ke Priyanshu ne apni Website bana di. Mehnat wale ko koi nahi rok sakta!"),
-]
-def clean(t):
-    t = re.sub('<[^<]+?>','',t or '')
-    return t[:180]+"..." if len(t)>180 else t
-def get_img(entry, title):
-    try:
-        if 'media_content' in entry: return entry.media_content[0]['url']
-        if 'links' in entry:
-            for l in entry.links:
-                if 'image' in l.get('type',''): return l['href']
-    except: pass
-    h = hashlib.md5(title.encode()).hexdigest()
-    return f"https://picsum.photos/seed/{h}/600/400"
-def make_cards(feed, seen, limit=15):
-    cards=""; count=0
-    for entry in feed.entries:
-        if count>=limit: break
-        title = entry.get('title','').strip()
-        link = entry.get('link','')
-        if title in seen or link in seen or not title: continue
-        seen.add(title); seen.add(link)
-        img = get_img(entry, title)
-        desc = clean(entry.get('summary','') or entry.get('description',''))
-        cards += f"""<div class="card"><img src="{img}"><h3>{title}</h3><p>{desc}</p><a href="{link}" target="_blank">Poori Khabar Padhein</a></div>"""
-        count += 1
-    return cards
-def header(search_val=""):
-    d = load_data()
-    d["total"] = d.get("total",0)+1
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    d["today"][today_str] = d["today"].get(today_str,0)+1
-    save_data(d)
-    return f"""
-<div class="header"><h1>BHAI KI NEWS</h1><p><span class="live">LIVE</span> Sirf Kaam Ki Khabar + Free Padhai</p><p>Made by Priyanshu Singh | Lucknow</p>
-<p style="background:black;color:white;display:inline-block;padding:5px 12px;border-radius:20px;font-size:13px">Aaj Aaye: {d["today"][today_str]} | Total: {d["total"]}</p>
-<div style="margin-top:12px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap"><a href="/" style="background:white;color:#d60000;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">News</a><a href="/library" style="background:yellow;color:black;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">Padhai Library</a><a href="/gk" style="background:white;color:#d60000;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">GK</a><a href="/about" style="background:white;color:#d60000;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">About</a><a href="/admin" style="background:black;color:white;padding:8px 14px;border-radius:20px;text-decoration:none;font-weight:bold">Admin</a></div></div>
+
+def fetch_news():
+
+now = time.time()    
+
+if now - _news_cache["time"] < 300:    
+    return _news_cache["items"]    
+
+collected = []    
+
+for category, feed_url in RSS_FEEDS:    
+
+    try:    
+
+        req = urllib.request.Request(    
+            feed_url,    
+            headers={    
+                "User-Agent": "BhaiKiNews/1.0"    
+            }    
+        )    
+
+        with urllib.request.urlopen(    
+            req,    
+            timeout=7    
+        ) as response:    
+
+            raw = response.read(1_000_000)    
+
+        root = ET.fromstring(raw)    
+
+        for item in root.findall(".//item")[:8]:    
+
+            title = item.findtext(    
+                "title",    
+                default=""    
+            ).strip()    
+
+            link = item.findtext(    
+                "link",    
+                default=""    
+            ).strip()    
+
+            pub = item.findtext(    
+                "pubDate",    
+                default=""    
+            ).strip()    
+
+            if (    
+                title    
+                and link.startswith(("https://", "http://"))    
+            ):    
+
+                collected.append({    
+
+                    "category": category,    
+                    "title": title[:250],    
+                    "link": link,    
+                    "date": pub[:100]    
+
+                })    
+
+    except Exception:    
+
+        app.logger.warning(    
+            "RSS unavailable: %s",    
+            category    
+        )    
+
+_news_cache["time"] = now    
+_news_cache["items"] = collected    
+
+return collected
+
+=====================================================
+
+WEBSITE DESIGN
+
+=====================================================
+
+CSS = """
+
+{
+box-sizing: border-box;
+}
+
+
+body {
+margin: 0;
+background: #f3f6fb;
+color: #172033;
+font-family: Arial, sans-serif;
+line-height: 1.6;
+}
+
+header {
+background: #102a56;
+color: white;
+padding: 18px 14px;
+}
+
+.wrap {
+max-width: 1050px;
+margin: auto;
+padding: 14px;
+}
+
+.brand {
+font-size: 25px;
+font-weight: bold;
+}
+
+.tag {
+font-size: 13px;
+color: #dbeafe;
+}
+
+nav {
+display: flex;
+flex-wrap: wrap;
+gap: 8px;
+margin-top: 12px;
+}
+
+nav a {
+color: white;
+text-decoration: none;
+background: #214578;
+padding: 7px 10px;
+border-radius: 7px;
+font-size: 14px;
+}
+
+.box {
+background: white;
+padding: 17px;
+margin: 14px 0;
+border-radius: 12px;
+box-shadow: 0 2px 9px #0000000c;
+}
+
+h1, h2, h3 {
+line-height: 1.3;
+}
+
+h1 {
+font-size: 25px;
+}
+
+h2 {
+font-size: 21px;
+}
+
+.grid {
+display: grid;
+grid-template-columns: repeat(
+auto-fit,
+minmax(220px, 1fr)
+);
+gap: 12px;
+}
+
+.card {
+border: 1px solid #e4eaf2;
+border-radius: 9px;
+padding: 12px;
+background: white;
+overflow-wrap: anywhere;
+}
+
+a {
+color: #0759b7;
+}
+
+input, textarea {
+width: 100%;
+padding: 11px;
+border: 1px solid #bdc9d8;
+border-radius: 7px;
+margin: 6px 0 12px;
+font: inherit;
+}
+
+button, .btn {
+display: inline-block;
+border: 0;
+background: #0759b7;
+color: white;
+padding: 10px 15px;
+border-radius: 7px;
+text-decoration: none;
+cursor: pointer;
+font: inherit;
+}
+
+.danger {
+background: #b42318;
+}
+
+.muted {
+color: #637083;
+font-size: 13px;
+}
+
+footer {
+text-align: center;
+padding: 25px;
+color: #657084;
+}
+
+.answer {
+color: #087443;
+font-weight: bold;
+}
+
 """
-def style():
-    return """
-<style>
-body{font-family:Arial;background:#f2f2f2;margin:0}
-.header{background:#d60000;color:white;padding:20px;text-align:center}
-.header h1{margin:0;font-size:32px}
-.live{background:yellow;color:black;padding:3px 10px;border-radius:20px;font-weight:bold}
-.search-box{padding:15px;background:white;position:sticky;top:0;z-index:9;box-shadow:0 2px 5px #ccc}
-.search-row{display:flex;gap:10px}
-.search-row input{flex:1;padding:12px;font-size:16px;border:2px solid #d60000;border-radius:25px;outline:none}
-.search-row button{background:#d60000;color:white;border:none;padding:12px 20px;border-radius:25px;font-size:16px;font-weight:bold}
-.tags{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
-.tags a{background:#ffe5e5;color:#d60000;padding:7px 14px;border-radius:20px;text-decoration:none;font-weight:bold;font-size:14px}
-h2{padding:0 15px;color:#d60000}
-.grid{display:grid;grid-template-columns:1fr 1fr;gap:15px;padding:0 15px 20px}
-.card{background:white;border-radius:12px;overflow:hidden;box-shadow:0 2px 8px #ccc}
-.card img{width:100%;height:180px;object-fit:cover}
-.card h3{font-size:17px;margin:12px 12px 5px}
-.card p{font-size:14px;color:#555;margin:0 12px 10px;line-height:1.5}
-.card a{display:block;color:#d60000;font-weight:bold;text-decoration:none;padding:0 12px 12px}
-.lib-card{background:white;border-radius:12px;padding:15px;box-shadow:0 2px 8px #ccc}
-.lib-card a{display:block;background:#d60000;color:white;text-align:center;padding:10px;border-radius:10px;text-decoration:none;font-weight:bold;margin-top:10px}
-.box{background:white;margin:15px;padding:20px;border-radius:12px;box-shadow:0 2px 8px #ccc;line-height:1.7}
-.footer{text-align:center;padding:20px;color:gray}
-.footer a{color:#d60000;text-decoration:none;font-weight:bold;margin:0 8px}
-input,select,textarea{width:100%;padding:12px;margin:8px 0;border:2px solid #ddd;border-radius:10px;font-size:16px}
-.btn{background:#d60000;color:white;border:none;padding:13px;border-radius:10px;width:100%;font-weight:bold;font-size:16px;cursor:pointer}
-@media(max-width:600px){.grid{grid-template-columns:1fr}}
-</style>
-"""
-def footer():
-    return """<div class="footer"><a href="/about">About Us</a> | <a href="/contact">Contact Us</a> | <a href="/privacy">Privacy Policy</a><br><br>2026 Bhai Ki News - Made by Priyanshu Singh, Lucknow</div>"""
-@app.route('/admin', methods=['GET','POST'])
-def admin():
-    if request.method=='POST':
-        if request.form.get('password') == ADMIN_PASSWORD:
-            session.clear()
-            session['admin'] = True
-            session.permanent = True
-            return redirect('/admin')
-        else:
-            return f"""<html><head><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div class="box"><h2>Galat Password Bhai!</h2><a href="/admin">Fir se try karo</a></div>{footer()}</body></html>"""
-    if not session.get('admin'):
-        return f"""<html><head><title>Admin Login</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div class="box"><h2>Admin Login - Sirf Priyanshu Ke Liye</h2><form method="post"><input type="password" name="password" placeholder="Password dalo"><button class="btn">Login Karo</button></form></div>{footer()}</body></html>"""
-    d = load_data()
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    reads_html = "".join([f"<p>{k} - {v} baar padha gaya</p>" for k,v in d.get("reads",{}).items()]) or "<p>Abhi kisi ne nahi padha</p>"
-    my_html = "".join([f"<div class='lib-card'><h3>{a['title']} [{a['cat']}]</h3><p>{a['text']}</p></div>" for a in d.get("my_articles",[])])
-    return f"""<html><head><title>Secret Dashboard</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}
-<div class="box"><h2>SECRET DASHBOARD - Sirf Tumhe Dikhega!</h2><p><b>Total Visitors:</b> {d.get('total',0)}</p><p><b>Aaj Aaye:</b> {d['today'].get(today_str,0)}</p><h3>Kya Kya Padha Gaya?</h3>{reads_html}</div>
-<div class="box"><h2>Apne Man Se Article Dalo</h2><form action="/add-article" method="post"><input name="title" placeholder="Title - Jaise Aaj ka GK" required><select name="cat"><option>Math</option><option>Science</option><option>Hindi</option><option>News</option><option>Article</option></select><textarea name="text" rows="5" placeholder="Yaha apna Article likho..." required></textarea><button class="btn">Publish Karo</button></form></div>
-<div class="box"><h2>Tumhare Dale Hue Article</h2>{my_html or '<p>Abhi koi nahi hai</p>'}</div>
-{footer()}</body></html>"""
-@app.route('/add-article', methods=['POST'])
-def add_article():
-    if not session.get('admin'): return redirect('/admin')
-    d = load_data()
-    d.setdefault("my_articles",[]).insert(0, {"title":request.form.get('title'), "cat":request.form.get('cat'), "text":request.form.get('text')})
-    save_data(d)
-    return redirect('/admin')
-@app.route('/about')
-def about():
-    body = """<div class="box"><h2>About Us - Bhai Ki News</h2><p>Namaste Dosto! Main <b>Priyanshu Singh, Lucknow</b> se hu.</p><p>Maine ye website isliye banayi taaki har bhai ko <b>Sirf Kaam Ki Khabar</b> aur <b>Free Padhai</b> ek hi jagah mil jaye.</p><p>Yaha milega: Daily News, NCERT Books, Previous Paper, Sarkari Naukri, GK aur Formula - Sab Free!</p></div>"""
-    return f"""<html><head><title>About Us - Bhai Ki News</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div style="padding-top:10px">{body}</div>{footer()}</body></html>"""
-@app.route('/contact')
-def contact():
-    body = """<div class="box"><h2>Contact Us</h2><p>Koi sujhav ho to bataye!</p><p><b>Email:</b> priyanshu.bhaikinews@gmail.com</p><p><b>Address:</b> Lucknow, Uttar Pradesh, India</p></div>"""
-    return f"""<html><head><title>Contact Us - Bhai Ki News</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div style="padding-top:10px">{body}</div>{footer()}</body></html>"""
-@app.route('/privacy')
-def privacy():
-    body = """<div class="box"><h2>Privacy Policy</h2><p>1. Hum aapka koi personal data nahi lete.</p><p>2. Khabar padhne par aap us khabar wali site par jate hai.</p><p>3. Google Ads aane par Google aapko Ads dikha sakta hai.</p></div>"""
-    return f"""<html><head><title>Privacy Policy - Bhai Ki News</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div style="padding-top:10px">{body}</div>{footer()}</body></html>"""
-@app.route('/gk')
-def gk():
-    aaj = datetime.now()
-    din_number = aaj.timetuple().tm_yday
-    q, a = GK_LIST[din_number % len(GK_LIST)]
-    body = f"""<div class="box"><h2>Aaj ka GK Question - {aaj.strftime('%d %B %Y')}</h2><h3>Q: {q}</h3><p><b>Answer:</b> {a}</p><p style="color:gray;font-size:13px">Kal naya sawaal apne aap aayega! Roz 1 naya GK!</p></div><h2>Saare Formula</h2><div class="grid">"""
-    for name, val in FORMULAS:
-        body += f"""<div class="lib-card"><h3 style="margin:0">{name}</h3><p style="font-size:18px;font-weight:bold;color:#d60000">{val}</p></div>"""
-    body += "</div>"
-    return f"""<html><head><title>Aaj ka GK Question aur Formula - Bhai Ki News</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div style="padding-top:10px">{body}</div>{footer()}</body></html>"""
-@app.route('/library')
-def library():
-    d = load_data()
-    body = "<h2 style='text-align:center'>Padhai Library - Sab Free Hai Bhai!</h2>"
-    body += "<h2>Bhai Ke Apne Article - Math / Science / Hindi</h2><div class='grid'>"
-    for title, cat, text in MY_NEW_ARTICLES:
-        body += f"""<div class="lib-card"><h3 style="margin:0">{title}</h3><p>{text}</p><span style="background:#ffe5e5;padding:4px 10px;border-radius:20px;font-size:12px">{cat}</span></div>"""
-    for a in d.get("my_articles",[]):
-        body += f"""<div class="lib-card" style="border:2px solid #d60000"><h3 style="margin:0">{a['title']}</h3><p>{a['text']}</p><span style="background:yellow;padding:4px 10px;border-radius:20px;font-size:12px">{a['cat']} - NAYA!</span></div>"""
-    body += "</div>"
-    for cat, items in LIBRARY.items():
-        body += f"<h2>{cat}</h2><div class='grid'>"
-        for name, link in items:
-            body += f"""<div class="lib-card"><h3 style="margin:0">{name}</h3><a href="{link}" target="_blank">Khol ke Padho</a></div>"""
-        body += "</div>"
-    return f"""<html><head><title>Padhai Library - Free NCERT Books, Previous Paper</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head><body>{header()}<div style="padding-top:10px">{body}</div>{footer()}</body></html>"""
-@app.route('/')
+
+HEADER = """
+
+<header>    
+<div class="wrap">    <div class="brand">📘 Bhai Ki News</div>    <div class="tag">    
+News • Free Study • GK • Electrical    
+</div>    <nav>    <a href="/">Home</a>
+<a href="/news">News</a>
+<a href="/gk">Daily GK</a>
+<a href="/formulas">Electrical Formulas</a>
+<a href="/library">Free Library</a>
+<a href="/notes">Notes</a>
+<a href="/about">About</a>
+<a href="/contact">Contact</a>
+
+</nav>    
+</div>    
+</header>    """
+
+FOOTER = """
+
+<footer>    © {{ year }} Bhai Ki News · पढ़ें, सीखें और आगे बढ़ें
+
+<br>    <a href="/privacy">Privacy Policy</a>
+·
+<a href="/admin">Admin</a>
+
+</footer>    """
+
+def page(title, content):
+
+template = """    
+
+<!doctype html>    
+
+<html lang="hi">    
+
+<head>    
+
+<meta charset="utf-8">    
+
+<meta name="viewport"    
+content="width=device-width,initial-scale=1">    
+
+<title>{{ title }} | {{ site_name }}</title>    
+
+<meta name="description"    
+content="Bhai Ki News पर हिंदी समाचार, GK, Electrical Engineering formulas और free study material पढ़ें।">    
+
+<style>{{ css|safe }}</style>    
+
+</head>    
+
+<body>    
+
+""" + HEADER + """    
+
+<main class="wrap">    
+
+""" + content + """    
+
+</main>    
+
+""" + FOOTER + """    
+
+</body>    
+</html>    
+
+"""    
+
+return render_template_string(    
+
+    template,    
+    title=title,    
+    css=CSS,    
+    year=datetime.now(TZ).year,    
+    site_name=SITE_NAME    
+
+)
+
+=====================================================
+
+ARTICLE CARDS
+
+=====================================================
+
+def article_cards():
+
+with db() as con:    
+
+    rows = con.execute(    
+        "SELECT * FROM articles ORDER BY id DESC LIMIT 20"    
+    ).fetchall()    
+
+if not rows:    
+
+    return "<p>अभी कोई नया लेख प्रकाशित नहीं हुआ है।</p>"    
+
+out = ""    
+
+for row in rows:    
+
+    out += (    
+
+        '<div class="card"><h3><a href="/article/'    
+        + str(row["id"])    
+        + '">'    
+        + html.escape(row["title"])    
+        + "</a></h3><p class='muted'>"    
+        + html.escape(row["created_at"])    
+        + "</p><p>"    
+        + html.escape(row["body"][:180])    
+        + "...</p></div>"    
+
+    )    
+
+return '<div class="grid">' + out + "</div>"
+
+=====================================================
+
+HOME PAGE
+
+=====================================================
+
+@app.route("/")
 def home():
-    q = request.args.get('q','').strip()
-    if q:
-        search_url = "https://news.google.com/rss/search?q=" + urllib.parse.quote(q + " when:7d") + "&hl=hi&gl=IN&ceid=IN:hi"
-        feed = feedparser.parse(search_url)
-        seen = set()
-        cards = make_cards(feed, seen, limit=30)
-        if not cards:
-            cards = "<p style='text-align:center;padding:20px'>Is naam ki koi khabar nahi mili!</p>"
-        body = f"<h2>'{q}' ki khabar</h2><div class='grid'>{cards}</div><div style='text-align:center;padding:10px'><a href='/' style='color:#d60000;font-weight:bold'>Wapas Home</a></div>"
-        search_val = q
-    else:
-        all_news = ""
-        seen = set()
-        for category, url in FEEDS.items():
-            try:
-                feed = feedparser.parse(url)
-                cards = make_cards(feed, seen, limit=15)
-                if cards:
-                    all_news += f"<h2>{category}</h2><div class='grid'>{cards}</div>"
-            except:
-                continue
-        body = all_news
-        search_val = ""
-    return f"""
-<html><head><title>Bhai Ki News - Kaam Ki Khabar, Free Padhai, GK, Sarkari Naukri</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head>
-<body>
-{header()}
-<div class="search-box"><form action="/" method="get"><div class="search-row"><input type="text" name="q" placeholder="Kuch bhi likho... Army, Gold, Padhai..." value="{search_val}"><button type="submit">Search</button></div></form><div class="tags"><a href="/?q=Army">Army</a><a href="/?q=Gold">Gold</a><a href="/?q=Padhai">Padhai</a><a href="/?q=Cricket">Cricket</a><a href="/?q=Job">Job</a><a href="/?q=UP">UP</a><a href="/library">Library Khol</a><a href="/gk">Aaj ka GK</a></div></div>
-<div style="padding-top:10px">{body}</div>
-{footer()}
-</body></html>
-"""
+
+question, answer = daily_item(GK)    
+
+formula_name, formula_value = daily_item(FORMULAS)    
+
+news = fetch_news()[:6]    
+
+news_html = ""    
+
+for item in news:    
+
+    news_html += (    
+
+        '<div class="card"><b>'    
+        + html.escape(item["category"])    
+        + '</b><br><a href="'    
+        + html.escape(item["link"], quote=True)    
+        + '" target="_blank" rel="noopener noreferrer">'    
+        + html.escape(item["title"])    
+        + '</a><p class="muted">'    
+        + html.escape(item["date"])    
+        + "</p></div>"    
+
+    )    
+
+if not news_html:    
+
+    news_html = (    
+        "<p>अभी समाचार लोड नहीं हो पाए। "    
+        "कुछ देर बाद फिर प्रयास करें।</p>"    
+    )    
+
+content = f"""    
+
+<section class="box">    
+
+<h1>स्वागत है Bhai Ki News पर</h1>    
+
+<p>    
+यहाँ हिंदी समाचार, सामान्य ज्ञान,    
+Electrical Engineering formulas    
+और पढ़ाई से जुड़ी सामग्री मिलेगी।    
+</p>    
+
+</section>    
+
+
+<section class="box">    
+
+<h2>🧠 आज का GK प्रश्न</h2>    
+
+<p>{html.escape(question)}</p>    
+
+<p class="answer">    
+उत्तर: {html.escape(answer)}    
+</p>    
+
+<a class="btn" href="/gk">और GK पढ़ें</a>    
+
+</section>    
+
+
+<section class="box">    
+
+<h2>⚡ आज का Electrical Formula</h2>    
+
+<p><b>{html.escape(formula_name)}</b></p>    
+
+<p class="answer">    
+{html.escape(formula_value)}    
+</p>    
+
+<a class="btn" href="/formulas">सभी Formula देखें</a>    
+
+</section>    
+
+
+<section class="box">    
+
+<h2>📰 ताज़ा समाचार</h2>    
+
+<div class="grid">{news_html}</div>    
+
+<p class="muted">    
+समाचार संबंधित RSS स्रोतों से दिखाए जाते हैं।    
+मूल खबर के लिए शीर्षक पर क्लिक करें।    
+</p>    
+
+</section>    
+
+
+<section class="box">    
+
+<h2>📚 नए लेख</h2>    
+
+{article_cards()}    
+
+</section>    
+
+"""    
+
+return page("Home", content)
+
+=====================================================
+
+NEWS PAGE
+
+=====================================================
+
+@app.route("/news")
+def news_page():
+
+items = fetch_news()    
+
+cards = ""    
+
+for item in items:    
+
+    cards += (    
+
+        '<div class="card"><b>'    
+        + html.escape(item["category"])    
+        + '</b><h3><a href="'    
+        + html.escape(item["link"], quote=True)    
+        + '" target="_blank" rel="noopener noreferrer">'    
+        + html.escape(item["title"])    
+        + '</a></h3><p class="muted">'    
+        + html.escape(item["date"])    
+        + "</p></div>"    
+
+    )    
+
+return page(    
+
+    "News",    
+
+    '<div class="box"><h1>📰 समाचार</h1>'    
+    '<div class="grid">'    
+    + (cards or "<p>समाचार अभी उपलब्ध नहीं हैं।</p>")    
+    + "</div></div>"    
+
+)
+
+=====================================================
+
+GK PAGE
+
+=====================================================
+
+@app.route("/gk")
+def gk_page():
+
+cards = ""    
+
+for i, (q, a) in enumerate(GK, 1):    
+
+    cards += (    
+
+        '<div class="card"><b>'    
+        + str(i)    
+        + ". "    
+        + html.escape(q)    
+        + '</b><p class="answer">उत्तर: '    
+        + html.escape(a)    
+        + "</p></div>"    
+
+    )    
+
+return page(    
+
+    "Daily GK",    
+
+    '<div class="box"><h1>🧠 सामान्य ज्ञान</h1>'    
+    '<div class="grid">'    
+    + cards    
+    + "</div></div>"    
+
+)
+
+=====================================================
+
+FORMULAS PAGE
+
+=====================================================
+
+@app.route("/formulas")
+def formulas_page():
+
+cards = ""    
+
+for i, (name, formula) in enumerate(FORMULAS, 1):    
+
+    cards += (    
+
+        '<div class="card"><b>'    
+        + str(i)    
+        + ". "    
+        + html.escape(name)    
+        + '</b><p class="answer">'    
+        + html.escape(formula)    
+        + "</p></div>"    
+
+    )    
+
+return page(    
+
+    "Electrical Formulas",    
+
+    '<div class="box"><h1>⚡ Electrical Engineering Formulas</h1>'    
+    '<div class="grid">'    
+    + cards    
+    + "</div></div>"    
+
+)
+
+=====================================================
+
+FREE LIBRARY
+
+=====================================================
+
+@app.route("/library")
+def library_page():
+
+content = """    
+
+<div class="box">    
+
+<h1>📚 Free Library</h1>    
+
+<p>    
+यहाँ उपयोगी शैक्षणिक वेबसाइटों के लिंक दिए गए हैं।    
+</p>    
+
+<div class="grid">    
+
+<div class="card">    
+<h3>NCERT</h3>    
+<a href="https://ncert.nic.in/"    
+target="_blank" rel="noopener noreferrer">    
+Official NCERT Website    
+</a>    
+</div>    
+
+<div class="card">    
+<h3>SWAYAM</h3>    
+<a href="https://swayam.gov.in/"    
+target="_blank" rel="noopener noreferrer">    
+Free Online Courses    
+</a>    
+</div>    
+
+<div class="card">    
+<h3>e-PG Pathshala</h3>    
+<a href="https://epgp.inflibnet.ac.in/"    
+target="_blank" rel="noopener noreferrer">    
+Study Material    
+</a>    
+</div>    
+
+<div class="card">    
+<h3>DIKSHA</h3>    
+<a href="https://diksha.gov.in/"    
+target="_blank" rel="noopener noreferrer">    
+Learning Resources    
+</a>    
+</div>    
+
+</div>    
+</div>    
+
+"""    
+
+return page("Free Library", content)
+
+=====================================================
+
+NOTES
+
+=====================================================
+
+@app.route("/notes")
+def notes_page():
+
+return page("Notes", """    
+
+<div class="box">    
+
+<h1>📝 Study Notes</h1>    
+
+<p>    
+इस सेक्शन में Electrical Engineering,    
+GK और प्रतियोगी परीक्षाओं से जुड़े नोट्स    
+प्रकाशित किए जा सकते हैं।    
+</p>    
+
+<p>    
+नए लेख देखने के लिए    
+<a href="/">Home Page</a> par jaayein.</p></div>""")
+
+=====================================================
+
+ARTICLE READ
+
+=====================================================
+
+@app.route("/article/int:article_id")
+def article_page(article_id):
+with db() as con:
+row = con.execute("SELECT * FROM articles WHERE id=?", (article_id,)).fetchone()
+if not row:
+abort(404)
+content = (
+'<div class="box"><h1>' + html.escape(row["title"]) + '</h1><p class="muted">' +
+html.escape(row["created_at"]) + '</p><div style="white-space:pre-wrap">' +
+html.escape(row[
