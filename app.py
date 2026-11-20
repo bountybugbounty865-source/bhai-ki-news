@@ -281,7 +281,7 @@ def home():
 <html><head><title>Bhai Ki News - Kaam Ki Khabar, Free Padhai, GK, Sarkari Naukri</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head>
 <body>
 {header()}
-<div class="search-box"><form action="/" method="get"><div class="search-row"><input type="text" name="q" placeholder="Kya dhoondhna hai? Jaise - Cricket, Naukri..." value="{search_val}"><button type="submit">Search</button></div></form><div class="tags"><a href="/?q=Cricket">Cricket</a><a href="/?q=UP News">UP News</a><a href="/?q=Sarkari Naukri">Naukri</a><a href="/?q=Exam">Exam</a></div></div>
+<div class="search-box"><form action="/" method="get"><div class="search-row"><input type="text" name="q" placeholder="Kuch bhi likho... Army, Gold, Padhai..." value="{search_val}"><button type="submit">Search</button></div></form><div class="tags"><a href="/?q=Army">Army</a><a href="/?q=Gold">Gold</a><a href="/?q=Padhai">Padhai</a><a href="/?q=Cricket">Cricket</a><a href="/?q=Job">Job</a><a href="/?q=UP">UP</a><a href="/library">Library Khol</a><a href="/gk">Aaj ka GK</a></div></div>
 <div style="padding-top:10px">{body}</div>
 {footer()}
 </body></html>
