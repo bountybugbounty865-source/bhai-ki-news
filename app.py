@@ -36,8 +36,6 @@ FEEDS = {
 "📚 Padhai": "https://news.google.com/rss/search?q=Exam Padhai&hl=hi&gl=IN&ceid=IN:hi",
 }
 
-# --- 31 DIN KE LIYE 31 GK ---
-
 GK_LIST = [
 ("Lal Kila kaha hai?", "Delhi me"),
 ("Taj Mahal kaha hai?", "Agra me"),
@@ -85,15 +83,10 @@ LIBRARY = {
 "🌍 SST - Itihas / Bhugol": [("Bharat Ka Itihas", "https://ncert.nic.in/"), ("Bharat Ka Bhugol", "https://ncert.nic.in/"), ("Samvidhan - Constitution", "https://ncert.nic.in/")],
 "🧠 Daily GK + Formula": [("Aaj Ka GK", "/gk"), ("Maths Formula", "/gk"), ("Science Formula", "/gk")],
 "💼 Sarkari Naukri Notes": [("UP Police Notes", "https://upmsp.edu.in/"), ("SSC GD Notes", "https://ssc.gov.in/"), ("Railway Notes", "https://rrbapply.gov.in/")],
-}# ===== HYBRID DAILY NOTES SYSTEM =====
-# Tu yaha roj dalega - Ye sabse upar dikhega
-
-MY_MANUAL_NOTES = {
-    # Example - Isko badal ke apna dal de
-    # "aaj-ka-tense": {"title": "Tense Trick - Aaj Ka", "cat": "English", "content": "Aaj maine Tense padhaya... Present Simple = Daily kaam"},
 }
-
-# Automatic wala - Tu na dale to ye apne aap chalega - 30 Din ka
+# ===== HYBRID DAILY NOTES SYSTEM =====
+MY_MANUAL_NOTES = {
+}
 AUTO_NOTES = [
     {"title": "Aaj Ka GK - Bharat Ki Rajdhani", "cat": "GK", "content": "Bharat ki Rajdhani New Delhi hai. GK roj yaad karo."},
     {"title": "Aaj Ka Vocab - 5 New Words", "cat": "English", "content": "1. Brave = Bahadur, 2. Honest = Imaandaar, 3. Quick = Tez, 4. Happy = Khush, 5. Strong = Mazboot"},
@@ -104,15 +97,13 @@ AUTO_NOTES = [
     {"title": "Aaj Ka Motivation", "cat": "Motivation", "content": "Roj 1 Ghanta padhoge to 1 Saal me Top karoge. Aaj se shuru karo!"},
 ]
 
-# Logic - Manual hai to Manual, nahi to Automatic
 def get_today_note():
     if MY_MANUAL_NOTES:
-        # Sabse last wala manual note le lo
         last_key = list(MY_MANUAL_NOTES.keys())[-1]
         d = MY_MANUAL_NOTES[last_key]
         return {"slug": last_key, "title": d["title"], "cat": d["cat"], "content": d["content"], "type": "Tera Wala 🔥"}
     else:
-      day = datetime.now().timetuple().tm_yday
+        day = datetime.now().timetuple().tm_yday
         d = AUTO_NOTES[day % len(AUTO_NOTES)]
         return {"slug": "auto", "title": d["title"], "cat": d["cat"], "content": d["content"], "type": "Automatic ✨"}
 
@@ -124,7 +115,6 @@ def show_note(slug):
     elif slug == "auto" or slug == "today":
         note = get_today_note()
     else:
-        # Auto me se dhoondho
         note = get_today_note()
     return f"""
     <div style="max-width:700px;margin:20px auto;padding:20px;font-family:sans-serif">
@@ -319,13 +309,5 @@ def home():
 <html><head><title>Bhai Ki News - Kaam Ki Khabar, Free Padhai, GK, Sarkari Naukri</title><meta name="viewport" content="width=device-width, initial-scale=1">{style()}</head>
 <body>
 {header()}
-<div class="search-box">
-<form class="search-row" action="/" method="get"><input type="text" name="q" value="{search_val}" placeholder="🔍 Kuch bhi likho... Army, Gold, Padhai..."><button type="submit">Search</button></form>
-<div class="tags"><a href="/?q=Army">🪖 Army</a><a href="/?q=Gold">🪙 Gold</a><a href="/?q=Padhai Exam">📚 Padhai</a><a href="/?q=Cricket">🏏 Cricket</a><a href="/?q=Job Naukri">💼 Job</a><a href="/?q=UP Lucknow">📍 UP</a><a href="/library">📚 Library Khol</a><a href="/gk">🧠 Aaj ka GK</a></div>
-</div>
-{body}
-{footer()}
-</body></html>
-"""
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=10000)
+<div class="search-box"><form action="/" method="get"><div class="search-row"><input type="text" name="q" placeholder="Kya dhoondhna hai? Jaise - Cricket, Naukri..." value="{search_val}"><button type="submit">Search 🔍</button></div></form><div class="tags"><a href="/?q=Cricket">🏏 Cricket</a><a href="/?q=UP News">📰 UP News</a><a href="/?q=Sarkari Naukri">💼 Naukri</a><a href="/?q=Exam">📚 Exam</a></div></div>
+<div style="padding-top:10px">{body}</div>
