@@ -1437,4 +1437,28 @@ def forbidden(e):
     return page("Forbidden", '<div class="box"><h2>Galat request</h2><p><a href="/">Home pe wapas jao</a></p></div>'), 403
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))# ===== ADMIN FIX - PURANE WALE KO OVERRIDE KAREGA =====
+from flask import session as _session
+
+@app.route('/admin', methods=['GET', 'POST'])
+def admin_fixed():
+    if request.method == 'POST':
+        pw = request.form.get('password', '')
+        if pw == ADMIN_PASSWORD:
+            session['admin'] = True
+            session['admin_logged_in'] = True
+            return redirect('/admin/dashboard')
+        return "Wrong Password! <a href='/admin'>Wapas Jao</a>"
+    return '''
+    <h2>Bhai Ki News - Admin Login</h2>
+    <form method="POST">
+    <input type="password" name="password" placeholder="Admin Password" required>
+    <br><br><button type="submit">Login</button>
+    </form>
+    '''
+
+@app.route('/admin/dashboard')
+def admin_dashboard_fixed():
+    if not session.get('admin'):
+        return redirect('/admin')
+    return '<h2>Admin Dashboard Khul Gaya! 🎉</h2><p>Ab kaam karega.</p><a href="/">Home</a>'
