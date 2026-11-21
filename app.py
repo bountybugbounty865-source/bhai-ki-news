@@ -1006,54 +1006,20 @@ def _is_real_image(url):
     return False
 
 def _safe_fetch(url):
-    current = url
-    orig_scheme = urlsplit(url).scheme
-    for _ in range(4):
-        if urlsplit(current).scheme not in ("http", "https"):
-            return None
-        r = _pinned_request("GET", current, timeout=4, max_bytes=200000, use_range=True)
-        if r is None:
-            return None
-        status = r["status"]
-        if status in (301, 302, 303, 307, 308):
-            nxt = r["headers"].get("location", "")
-            if not nxt:
-                return None
-            nxt_abs = urljoin(current, nxt)
-            if not _is_syntax_safe_url(nxt_abs):
-                return None
-            if orig_scheme == "https" and urlsplit(nxt_abs).scheme == "http":
-                return None
-            current = nxt_abs
-            continue
-        if status in (200, 206):
-            ct = _clean_mime(r["headers"].get("content-type", ""))
-            if "text/html" not in ct and "application/xhtml+xml" not in ct:
-                return None
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            body = r.read().decode("utf-8", errors="ignore")
+            return url, body
+    except Exception:
+        return None
 
-  class NewsImageParser(HTMLParser):
-    """Extract images from HTML."""
-
-    def __init__(self):
-        super().__init__()
-        self.images = []
-
-    def handle_starttag(self, tag, attrs):
-        if tag.lower() != "img":
-            return
-
-        attrs = dict(attrs)
-
-        for key in ("src", "data-src", "data-original",
-                    "data-lazy-src"):
-            value = attrs.get(key)
-            if value:
-                self.images.append(value)
-
-        for item in attrs.get("srcset", "").split(","):
-            parts = item.strip().split()
-            if parts:
-                self.images.append(parts[0])
+def get_news_image(entry):
+    html = entry.get("summary", "") or ""
+    m = re.search(r'src="([^"]+)"', html)
+    if m:
+        return m.group(1)
+    return ""
 
 
 def make_cards(feed, seen, limit=15):
