@@ -1207,7 +1207,255 @@ def _extract_article_images(article_url):
 
     return final_images
 
+def get_news_image(entry):
+    """
+    BHAI KI NEWS
+    Professional Multi-Source News Image Extractor
 
+    Features:
+    - RSS Media Content
+    - RSS Thumbnails
+    - RSS Enclosures
+    - RSS Content / Summary
+    - Article Open Graph / Twitter Images
+    - Duplicate Removal
+    - Safe URL Validation
+    - Real Image Verification
+    - Existing Image Cache Support
+    """
+
+    try:
+        if not hasattr(entry, "get"):
+            return ""
+
+        candidates = []
+        seen = set()
+
+        article_url = str(
+            entry.get("link", "") or ""
+        ).strip()
+
+        # ---------------------------------
+        # 1. ADD IMAGE CANDIDATE
+        # ---------------------------------
+
+        def add_url(value):
+
+            if not isinstance(value, str):
+                return
+
+            value = html.unescape(value).strip()
+
+            if not value:
+                return
+
+            if len(value) > 2048:
+                return
+
+            if value.startswith(("data:", "blob:")):
+                return
+
+            if article_url:
+                value = urljoin(article_url, value)
+
+            if value in seen:
+                return
+
+            if not _is_syntax_safe_url(value):
+                return
+
+            seen.add(value)
+            candidates.append(value)
+
+        # ---------------------------------
+        # 2. RSS MEDIA CONTENT
+        # ---------------------------------
+
+        media = entry.get("media_content", []) or []
+
+        if isinstance(media, dict):
+            media = [media]
+
+        for item in media:
+
+            if isinstance(item, dict):
+                add_url(item.get("url"))
+
+        # ---------------------------------
+        # 3. RSS THUMBNAILS
+        # ---------------------------------
+
+        thumbnails = entry.get(
+            "media_thumbnail", []
+        ) or []
+
+        if isinstance(thumbnails, dict):
+            thumbnails = [thumbnails]
+
+        for item in thumbnails:
+
+            if isinstance(item, dict):
+                add_url(item.get("url"))
+
+        # ---------------------------------
+        # 4. RSS ENCLOSURES
+        # ---------------------------------
+
+        enclosures = entry.get("enclosures", []) or []
+
+        if isinstance(enclosures, dict):
+            enclosures = [enclosures]
+
+        for item in enclosures:
+
+            if isinstance(item, dict):
+
+                mime = _clean_mime(
+                    str(item.get("type", ""))
+                )
+
+                if not mime or mime.startswith("image/"):
+
+                    add_url(
+                        item.get("href")
+                        or item.get("url")
+                    )
+
+        # ---------------------------------
+        # 5. PARSE HTML CONTENT
+        # ---------------------------------
+
+        html_sources = []
+
+        summary = entry.get("summary", "")
+
+        if summary:
+            html_sources.append(summary)
+
+        description = entry.get("description", "")
+
+        if description:
+            html_sources.append(description)
+
+        content = entry.get("content", []) or []
+
+        if isinstance(content, dict):
+            content = [content]
+
+        for item in content:
+
+            if isinstance(item, dict):
+
+                value = item.get("value", "")
+
+                if value:
+                    html_sources.append(value)
+
+        summary_detail = entry.get(
+            "summary_detail", {}
+        ) or {}
+
+        if isinstance(summary_detail, dict):
+
+            value = summary_detail.get("value", "")
+
+            if value:
+                html_sources.append(value)
+
+        for source in html_sources:
+
+            if not isinstance(source, str):
+                continue
+
+            parser = _NewsImageParser()
+
+            try:
+                parser.feed(source)
+
+                for image_url in parser.images:
+                    add_url(image_url)
+
+            except Exception:
+                continue
+
+            if len(candidates) >= _MAX_CANDIDATES:
+                break
+
+        # ---------------------------------
+        # 6. ARTICLE IMAGE EXTRACTION
+        # ---------------------------------
+
+        if (
+            article_url
+            and len(candidates) < _MAX_CANDIDATES
+            and _is_syntax_safe_url(article_url)
+        ):
+
+            try:
+
+                article_images = _extract_article_images(
+                    article_url
+                )
+
+                for image_url in article_images:
+
+                    add_url(image_url)
+
+                    if len(candidates) >= _MAX_CANDIDATES:
+                        break
+
+            except Exception:
+
+                pass
+
+        # ---------------------------------
+        # 7. REAL IMAGE VALIDATION
+        # ---------------------------------
+
+        checked = 0
+
+        MAX_IMAGE_CHECKS = 3
+
+        for image_url in candidates:
+
+            if checked >= MAX_IMAGE_CHECKS:
+                break
+
+            if not _is_relevant_image(
+                image_url,
+                article_url
+            ):
+                continue
+
+            checked += 1
+
+            try:
+
+                if _is_real_image(image_url):
+
+                    return image_url
+
+            except Exception:
+
+                continue
+
+        # ---------------------------------
+        # 8. NO VALID IMAGE
+        # ---------------------------------
+
+        return ""
+
+    except Exception as e:
+
+        try:
+            app.logger.warning(
+                "News image extraction failed: %s",
+                str(e)
+            )
+        except Exception:
+            pass
+
+        return ""
 def make_cards(feed, seen, limit=15):
 
     cards = ""
