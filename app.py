@@ -647,7 +647,8 @@ def make_cards(feed, seen, limit=15):
 
 
         img = get_news_image(entry)
-        image_html = (
+ print("IMAGE DEBUG:", title, img)  
+image_html = (
             f'<img src="{esc(img)}" alt="{esc(title)}" loading="lazy">'
             if img else ""
         )
