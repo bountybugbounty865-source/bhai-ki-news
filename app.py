@@ -593,15 +593,7 @@ def get_img(entry, title):
     except Exception:
         pass
 
-    image_hash = hashlib.sha256(
-        title.encode("utf-8")
-    ).hexdigest()[:20]
-
-    return (
-        "https://picsum.photos/seed/"
-        + image_hash
-        + "/600/400"
-    )
+    return ""
 
 
 def make_cards(feed, seen, limit=15):
@@ -632,8 +624,13 @@ def make_cards(feed, seen, limit=15):
         seen.add(title)
         seen.add(link)
 
-        img = get_img(entry, title)
+        
+img = get_img(entry, title)
 
+image_html = (
+    f'<img src="{esc(img)}" alt="{esc(title)}" loading="lazy">'
+    if img else ""
+)
         description = clean(
             entry.get("summary", "")
             or entry.get("description", "")
@@ -642,9 +639,7 @@ def make_cards(feed, seen, limit=15):
         cards += f"""
         <div class="card">
 
-            <img src="{esc(img)}"
-                 alt="{esc(title)}"
-                 loading="lazy">
+                   {image_html} 
 
             <h3>{esc(title)}</h3>
 
