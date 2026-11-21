@@ -1104,50 +1104,11 @@ def get_news_image(entry):
         for url in re.findall(r'<img[^>]+src=["\']([^"\']+)["\']', summary, re.I):
             add_image(url)
     base_url = entry.get("link", "")
-    for url in candidates:
+      for url in candidates:
         url = urljoin(base_url, url)
-        if is_valid(url) and _is_real_image(url):
+        if is_valid(url) and is_syntax_safe_url(url):
             return url
-    if base_url and _is_syntax_safe_url(base_url):
-        now = time.time()
-        with _LOCK:
-            cached = _OG_CACHE.get(base_url)
-        if cached:
-            cached_url, cached_time = cached
-            ttl = _OG_TTL if cached_url else _OG_EMPTY_TTL
-            if now - cached_time < ttl:
-                if cached_url and is_valid(cached_url) and _is_real_image(cached_url):
-                    return cached_url
-                if not cached_url:
-                    return ""
-                with _LOCK:
-                    _OG_CACHE.pop(base_url, None)
-            else:
-                with _LOCK:
-                    _OG_CACHE.pop(base_url, None)
-        result = _safe_fetch(base_url)
-        if result is not None:
-            try:
-                final_url, page_text, is_partial = result
-                parser = _MetaParser()
-                parser.feed(page_text[:200000])
-                if is_partial and "</head" not in page_text.lower():
-                    return ""
-                found = False
-                for raw in (parser.og, parser.twitter):
-                    if raw:
-                        url = urljoin(final_url, html.unescape(raw))
-                        if is_valid(url) and _is_real_image(url):
-                            _og_cache_set(base_url, url, now)
-                            return url
-                        found = True
-                if is_partial and not found:
-                    return ""
-            except Exception:
-                pass
-        if result is not None and not result[2]:
-            _og_cache_set(base_url, "", now)
-    return ""
+    return ""  
 def make_cards(feed, seen, limit=15):
     cards = ""
 
