@@ -1055,9 +1055,9 @@ def get_news_image(entry):
             candidates.extend(images)
 
         # 5. Image Validation
-        for url in candidates:
-            if url and valid_news_image(url):
-                return url
+                for url in candidates:
+                    if url:
+                        return url
 
         return ""
 
@@ -1091,8 +1091,7 @@ def make_cards(feed, seen, limit=15):
         img = get_news_image(entry)
 
         image_html = ""
-
-if img:        
+        if img:        
             image_html = f"""
             <div class="news-image-box">
                 <img
