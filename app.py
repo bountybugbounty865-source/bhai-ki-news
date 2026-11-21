@@ -1081,10 +1081,13 @@ def style():
         object-fit: cover;
     }
 
-    .card h3 {
-        font-size: 17px;
-        margin: 12px;
-    }
+  .card h3 {
+    font-size: 19px;
+    font-weight: 800;
+    line-height: 1.5;
+    margin: 12px;
+    color: #222;
+}  
 
     .card p {
         font-size: 14px;
@@ -1106,7 +1109,18 @@ def style():
         padding: 20px;
         border-radius: 12px;
     }
+.box h3 {
+    font-size: 22px;
+    font-weight: 800;
+    line-height: 1.5;
+    color: #b71c1c;
+    margin: 12px 0;
+}
 
+.box h2 {
+    font-size: 22px;
+    font-weight: 800;
+}
     .footer {
         text-align: center;
         padding: 20px;
