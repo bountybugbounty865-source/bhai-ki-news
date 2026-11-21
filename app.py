@@ -1015,10 +1015,54 @@ def _safe_fetch(url):
         return None
 
 def get_news_image(entry):
-    html = entry.get("summary", "") or ""
-    m = re.search(r'src="([^"]+)"', html)
-    if m:
-        return m.group(1)
+    try:
+        candidates = []
+
+        # 1. Media Content
+        mc = entry.get("media_content", [])
+        if isinstance(mc, list):
+            for item in mc:
+                if isinstance(item, dict):
+                    candidates.append(item.get("url", ""))
+
+        # 2. Enclosures
+        enc = entry.get("enclosures", [])
+        if isinstance(enc, list):
+            for item in enc:
+                if isinstance(item, dict):
+                    candidates.append(item.get("href", ""))
+
+        # 3. Media Thumbnail
+        mt = entry.get("media_thumbnail", [])
+        if isinstance(mt, list):
+            for item in mt:
+                if isinstance(item, dict):
+                    candidates.append(item.get("url", ""))
+
+        # 4. Summary / Description
+        content = (
+            entry.get("summary", "")
+            or entry.get("description", "")
+            or ""
+        )
+
+        if isinstance(content, str):
+            images = re.findall(
+                r'<img[^>]+src\s*=\s*["\']([^"\']+)["\']',
+                content,
+                re.IGNORECASE
+            )
+            candidates.extend(images)
+
+        # 5. Image Validation
+        for url in candidates:
+            if url and valid_news_image(url):
+                return url
+
+        return ""
+
+    except Exception:
+        return ""
     return ""
 
 
