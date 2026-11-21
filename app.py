@@ -1092,7 +1092,7 @@ def make_cards(feed, seen, limit=15):
 
         image_html = ""
 
-        if img and valid_news_image(img):
+if img:        
             image_html = f"""
             <div class="news-image-box">
                 <img
