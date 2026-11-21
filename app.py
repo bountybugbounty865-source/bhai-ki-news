@@ -1107,7 +1107,19 @@ def get_news_image(entry):
     for url in candidates:
         url = urljoin(base_url, url)
         if is_valid(url) and is_syntax_safe_url(url):
-            return url
+            return url    # fallback: khabar ke page se asli og:image uthao
+    try:
+        r = requests.get(base_url, timeout=6, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code == 200:
+            m = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', r.text, re.I)
+            if not m:
+                m = re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', r.text, re.I)
+            if m:
+                og = urljoin(base_url, m.group(1).strip())
+                if is_valid(og) and is_syntax_safe_url(og):
+                    return og
+    except Exception:
+        pass
     return ""  
 def make_cards(feed, seen, limit=15):
     cards = ""
