@@ -1407,43 +1407,17 @@ def get_news_image(entry):
             except Exception:
 
                 pass
+# 7. FAST
+for image_url in candidates:
+    if _is_relevant_image(image_url, article_url):
+        return image_url
+# 8. NO VALID IMAGE
+return ""
+# --------------------------
+# 8. NO VALID IMAGE
+# --------------------------
 
-        # ---------------------------------
-        # 7. REAL IMAGE VALIDATION
-        # ---------------------------------
-
-        checked = 0
-
-        MAX_IMAGE_CHECKS = 3
-
-        for image_url in candidates:
-
-            if checked >= MAX_IMAGE_CHECKS:
-                break
-
-            if not _is_relevant_image(
-                image_url,
-                article_url
-            ):
-                continue
-
-            checked += 1
-
-            try:
-
-                if _is_real_image(image_url):
-
-                    return image_url
-
-            except Exception:
-
-                continue
-
-        # ---------------------------------
-        # 8. NO VALID IMAGE
-        # ---------------------------------
-
-        return ""
+return ""
 
     except Exception as e:
 
