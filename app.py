@@ -1018,46 +1018,91 @@ def get_news_image(entry):
     try:
         candidates = []
 
+        def add_url(url):
+            if isinstance(url, str):
+                url = html.unescape(url).strip()
+                if url and url not in candidates:
+                    candidates.append(url)
+
+        def extract_html_images(content):
+            if not isinstance(content, str):
+                return
+
+            patterns = [
+                r'<img[^>]+src=["\']([^"\']+)["\']',
+                r'<img[^>]+data-src=["\']([^"\']+)["\']',
+                r'<img[^>]+data-original=["\']([^"\']+)["\']',
+                r'<img[^>]+srcset=["\']([^"\']+)["\']'
+            ]
+
+            for pattern in patterns:
+                for match in re.findall(
+                    pattern, content, re.IGNORECASE
+                ):
+                    if "," in match and " " in match:
+                        for item in match.split(","):
+                            add_url(item.strip().split()[0])
+                    else:
+                        add_url(match)
+
         # 1. Media Content
         mc = entry.get("media_content", [])
+
         if isinstance(mc, list):
             for item in mc:
                 if isinstance(item, dict):
-                    candidates.append(item.get("url", ""))
+                    add_url(item.get("url"))
 
-        # 2. Enclosures
-        enc = entry.get("enclosures", [])
-        if isinstance(enc, list):
-            for item in enc:
-                if isinstance(item, dict):
-                    candidates.append(item.get("href", ""))
-
-        # 3. Media Thumbnail
+        # 2. Media Thumbnail
         mt = entry.get("media_thumbnail", [])
+
         if isinstance(mt, list):
             for item in mt:
                 if isinstance(item, dict):
-                    candidates.append(item.get("url", ""))
+                    add_url(item.get("url"))
 
-        # 4. Summary / Description
-        content = (
-            entry.get("summary", "")
-            or entry.get("description", "")
-            or ""
-        )
+        # 3. Enclosures
+        enclosures = entry.get("enclosures", [])
 
-        if isinstance(content, str):
-            images = re.findall(
-                r'<img[^>]+src\s*=\s*["\']([^"\']+)["\']',
-                content,
-                re.IGNORECASE
-            )
-                candidates.extend(images)
-    # 5. Image Validation
-    for url in candidates:
-        if url:
-            return url
-    return ""
+        if isinstance(enclosures, list):
+            for enc in enclosures:
+                if isinstance(enc, dict):
+                    mime = enc.get("type", "")
+
+                    if mime.startswith("image/") or not mime:
+                        add_url(enc.get("href") or enc.get("url"))
+
+        # 4. Image Links
+        links = entry.get("links", [])
+
+        if isinstance(links, list):
+            for link in links:
+                if isinstance(link, dict):
+                    mime = link.get("type", "")
+
+                    if mime.startswith("image/"):
+                        add_url(link.get("href"))
+
+        # 5. Summary
+        extract_html_images(entry.get("summary", ""))
+
+        # 6. Content
+        content = entry.get("content", [])
+
+        if isinstance(content, list):
+            for item in content:
+                if isinstance(item, dict):
+                    extract_html_images(item.get("value", ""))
+
+        # 7. Image Validation
+        for url in candidates:
+            try:
+                if valid_news_image(url):
+                    return url
+            except Exception:
+                continue
+
+        return ""
 
     except Exception:
         return ""
