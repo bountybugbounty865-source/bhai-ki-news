@@ -1137,7 +1137,7 @@ def get_news_image(entry):
                 for raw in (parser.og, parser.twitter):
                     if raw:
                         url = urljoin(final_url, html.unescape(raw))
-                                                if is_valid(url) and _is_real_image(url):
+                        if is_valid(url) and _is_real_image(url):
                             _og_cache_set(base_url, url, now)
                             return url
                         found = True
