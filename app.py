@@ -1104,7 +1104,7 @@ def get_news_image(entry):
         for url in re.findall(r'<img[^>]+src=["\']([^"\']+)["\']', summary, re.I):
             add_image(url)
     base_url = entry.get("link", "")
-      for url in candidates:
+    for url in candidates:
         url = urljoin(base_url, url)
         if is_valid(url) and is_syntax_safe_url(url):
             return url
