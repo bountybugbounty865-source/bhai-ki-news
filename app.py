@@ -624,13 +624,15 @@ def make_cards(feed, seen, limit=15):
         seen.add(title)
         seen.add(link)
 
-        
-img = get_img(entry, title)
 
-image_html = (
-    f'<img src="{esc(img)}" alt="{esc(title)}" loading="lazy">'
-    if img else ""
-)
+                img = get_img(entry, 
+        title)
+
+        image_html = (
+            f'<img src="{esc(img)}" alt="{esc(title)}" loading="lazy">'
+            if img else ""
+        )
+
         description = clean(
             entry.get("summary", "")
             or entry.get("description", "")
@@ -638,19 +640,14 @@ image_html = (
 
         cards += f"""
         <div class="card">
-
-                   {image_html} 
-
+            {image_html}
             <h3>{esc(title)}</h3>
-
             <p>{esc(description)}</p>
-
             <a href="{esc(link)}"
                target="_blank"
                rel="noopener noreferrer">
                Poori Khabar Padhein
             </a>
-
         </div>
         """
 
