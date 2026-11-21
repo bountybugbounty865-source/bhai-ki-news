@@ -565,58 +565,579 @@ def safe_url(url):
 
 
 import re
+import html
+import time
+import socket
+import ssl
+import io
+import warnings
+import ipaddress
+import threading
+import http.client
+from urllib.parse import urljoin, urlsplit
+from html.parser import HTMLParser
+
+try:
+    from PIL import Image
+    Image.MAX_IMAGE_PIXELS = 25000000
+    _HAS_PIL = True
+except Exception:
+    _HAS_PIL = False
+
+_LOCK = threading.Lock()
+_OG_CACHE = {}
+_OG_TTL = 3600
+_OG_EMPTY_TTL = 300
+_OG_MAX = 500
+_IMG_CHECK_CACHE = {}
+_IMG_TTL = 3600
+_IMG_MAX = 1000
+_DNS_CACHE = {}
+_DNS_TTL = 60
+_DNS_EMPTY_TTL = 5
+_MAX_CANDIDATES = 15
+_MAX_PIXELS = 25000000
+_CHUNK = 32768
+_DNS_SEM = threading.Semaphore(20)
+
+class _MetaParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.og = ""
+        self.twitter = ""
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() != "meta":
+            return
+        d = {k.lower(): v for k, v in attrs}
+        prop = str(d.get("property") or d.get("name") or "").strip().lower()
+        content = str(d.get("content") or "").strip()
+        if not content:
+            return
+        if prop in ("og:image", "og:image:url") and not self.og:
+            self.og = content.strip()
+        elif prop in ("twitter:image", "twitter:image:src") and not self.twitter:
+            self.twitter = content.strip()
+
+def _clean_mime(raw):
+    return raw.split(";", 1)[0].strip().lower()
+
+def _resolve_ips(host):
+    host = host.rstrip(".").lower()
+    try:
+        ip = ipaddress.ip_address(host)
+        return {str(ip)}
+    except ValueError:
+        pass
+    now = time.time()
+    with _LOCK:
+        if host in _DNS_CACHE:
+            ips, t, ttl = _DNS_CACHE[host]
+            if now - t < ttl:
+                return set(ips)
+    try:
+        infos = socket.getaddrinfo(host, None)
+        ips = set(info[4][0] for info in infos)
+    except Exception:
+        ips = set()
+    with _LOCK:
+        if len(_DNS_CACHE) >= 1000:
+            _DNS_CACHE.clear()
+        ttl = _DNS_TTL if ips else _DNS_EMPTY_TTL
+        _DNS_CACHE[host] = (set(ips), now, ttl)
+    return ips
+
+def _resolve_ips_deadline(host, deadline):
+    try:
+        ip = ipaddress.ip_address(host.rstrip(".").lower())
+        return {str(ip)}
+    except ValueError:
+        pass
+    now = time.time()
+    with _LOCK:
+        if host.rstrip(".").lower() in _DNS_CACHE:
+            ips, t, ttl = _DNS_CACHE[host.rstrip(".").lower()]
+            if now - t < ttl:
+                return set(ips)
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        return set()
+    if not _DNS_SEM.acquire(timeout=min(remaining, 1)):
+        return set()
+    holder = {}
+    def _do():
+        try:
+            holder["ips"] = _resolve_ips(host)
+        finally:
+            _DNS_SEM.release()
+    th = threading.Thread(target=_do, daemon=True)
+    th.start()
+    th.join(timeout=remaining)
+    if th.is_alive():
+        return set()
+    return holder.get("ips", set())
+
+def _is_ip_public(ip_str):
+    try:
+        return ipaddress.ip_address(ip_str).is_global
+    except Exception:
+        return False
+
+def _is_syntax_safe_url(url):
+    try:
+        p = urlsplit(url)
+        if p.scheme not in ("http", "https"):
+            return False
+        if not p.hostname or p.username or p.password:
+            return False
+        host = p.hostname.lower()
+        try:
+            ip = ipaddress.ip_address(host.rstrip("."))
+            if not ip.is_global:
+                return False
+        except ValueError:
+            pass
+        if host.rstrip(".").lower() in ("localhost",):
+            return False
+        return True
+    except Exception:
+        return False
+
+def _is_safe_url(url):
+    return _is_syntax_safe_url(url)
+
+def _host_header(host, port):
+    h = f"[{host}]" if ":" in host else host
+    if port:
+        h += f":{port}"
+    return h
+
+class _PinnedHTTPConnection(http.client.HTTPConnection):
+    def __init__(self, host, pinned_ip, *a, **kw):
+        super().__init__(host, *a, **kw)
+        self._pinned_ip = pinned_ip
+    def connect(self):
+        self.sock = socket.create_connection((self._pinned_ip, self.port), timeout=self.timeout)
+
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    def __init__(self, host, pinned_ip, *a, **kw):
+        super().__init__(host, *a, **kw)
+        self._pinned_ip = pinned_ip
+    def connect(self):
+        raw = socket.create_connection((self._pinned_ip, self.port), timeout=self.timeout)
+        ctx = ssl.create_default_context()
+        self.sock = ctx.wrap_socket(raw, server_hostname=self.host)
+
+def _read_limited(resp, max_bytes, deadline, sock=None):
+    buf = bytearray()
+    read_error = False
+    try:
+        while len(buf) <= max_bytes:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                read_error = True
+                break
+            if sock is not None:
+                try:
+                    sock.settimeout(remaining)
+                except Exception:
+                    pass
+            chunk = resp.read(min(_CHUNK, max_bytes + 1 - len(buf)))
+            if not chunk:
+                break
+            buf.extend(chunk)
+    except Exception:
+        read_error = True
+    is_truncated = len(buf) > max_bytes
+    return bytes(buf[:max_bytes]), is_truncated, read_error
+
+def _pinned_request(method, url, timeout=4, max_bytes=200000, use_range=True):
+    if method not in ("GET", "HEAD"):
+        return None
+    if not isinstance(max_bytes, int) or isinstance(max_bytes, bool) or max_bytes <= 0:
+        return None
+    if not isinstance(timeout, (int, float)) or isinstance(timeout, bool) or timeout <= 0:
+        return None
+    start = time.monotonic()
+    deadline = start + timeout + 2
+    try:
+        p = urlsplit(url)
+    except (ValueError, TypeError):
+        return None
+    if p.scheme not in ("http", "https") or not p.hostname:
+        return None
+    if p.username or p.password:
+        return None
+    host = p.hostname.lower()
+    if host in ("localhost", "127.0.0.1", "::1"):
+        return None
+    try:
+        port = p.port or (443 if p.scheme == "https" else 80)
+        if not 1 <= port <= 65535:
+            return None
+    except ValueError:
+        return None
+    ips = _resolve_ips_deadline(host, deadline)
+    if not ips or not all(_is_ip_public(x) for x in ips):
+        return None
+    path = p.path or "/"
+    if p.query:
+        path += "?" + p.query
+    sorted_ips = sorted(ips, key=lambda x: 0 if "." in x else 1)
+    for ip in sorted_ips:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return None
+        conn_timeout = min(timeout, remaining)
+        if conn_timeout <= 0:
+            return None
+        conn = None
+        try:
+            if p.scheme == "https":
+                conn = _PinnedHTTPSConnection(host, ip, port, timeout=conn_timeout)
+            else:
+                conn = _PinnedHTTPConnection(host, ip, port, timeout=conn_timeout)
+            headers = {"Host": _host_header(host, p.port), "User-Agent": "Mozilla/5.0 BHAI-KI-NEWS-Bot", "Accept": "*/*", "Connection": "close"}
+            if method == "GET" and use_range:
+                headers["Range"] = f"bytes=0-{max_bytes-1}"
+            conn.request(method, path, headers=headers)
+            remaining2 = deadline - time.monotonic()
+            if remaining2 <= 0:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                return None
+            try:
+                if conn.sock is not None:
+                    conn.sock.settimeout(remaining2)
+            except Exception:
+                pass
+            resp = conn.getresponse()
+            status = resp.status
+            r_headers = {k.lower(): v for k, v in resp.getheaders()}
+            cl_early = r_headers.get("content-length", "")
+            if cl_early.isdigit() and int(cl_early) > max_bytes:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+                return {"status": status, "headers": r_headers, "location": r_headers.get("location", ""), "body": b"", "final_url": url, "is_partial": True, "total": int(cl_early)}
+            sock = None
+            try:
+                sock = conn.sock
+            except Exception:
+                sock = None
+            body, is_truncated, read_error = _read_limited(resp, max_bytes, deadline, sock)
+            is_partial = False
+            if read_error:
+                is_partial = True
+            total = None
+            cr = r_headers.get("content-range", "")
+            cl = r_headers.get("content-length", "")
+            if status == 206 and not cr:
+                is_partial = True
+            if cr:
+                try:
+                    m = re.fullmatch(r"bytes (\d+)-(\d+)/(\d+|\*)", cr.strip(), re.I)
+                    if not m:
+                        is_partial = True
+                    else:
+                        start_b = int(m.group(1))
+                        end = int(m.group(2))
+                        total_part = m.group(3)
+                        total = None if total_part == "*" else int(total_part)
+                        expected_len = end - start_b + 1
+                        if start_b != 0 or end < start_b:
+                            is_partial = True
+                        if total is not None and total <= end:
+                            is_partial = True
+                        if not use_range and total is not None and end + 1 != total:
+                            is_partial = True
+                        if len(body) != expected_len:
+                            is_partial = True
+                except (ValueError, TypeError):
+                    is_partial = True
+                    total = None
+            elif cl.isdigit():
+                try:
+                    total = int(cl)
+                    if status == 200 and len(body) < total:
+                        is_partial = True
+                except Exception:
+                    total = None
+            if is_truncated:
+                is_partial = True
+            try:
+                conn.close()
+            except Exception:
+                pass
+            return {"status": status, "headers": r_headers, "location": r_headers.get("location", ""), "body": body, "final_url": url, "is_partial": is_partial, "total": total}
+        except Exception:
+            try:
+                if conn:
+                    conn.close()
+            except Exception:
+                pass
+            continue
+    return None
+
+def _is_image_bytes(data):
+    if not data or len(data) < 12:
+        return False
+    if data[:3] == b"\xff\xd8\xff":
+        return True
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return True
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return True
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return True
+    if len(data) >= 20 and data[4:8] == b"ftyp":
+        if b"avif" in data[8:32] or b"avis" in data[8:32]:
+            return True
+    return False
+
+def _is_valid_image_data(data):
+    if not _is_image_bytes(data):
+        return False
+    if not _HAS_PIL:
+        return False
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            im = Image.open(io.BytesIO(data))
+            if im.format not in ("JPEG", "PNG", "GIF", "WEBP", "AVIF"):
+                return False
+            w, h = im.size
+            if w <= 0 or h <= 0 or w * h > _MAX_PIXELS:
+                return False
+            im.verify()
+        return True
+    except Exception:
+        return False
+
+def _og_cache_set(key, val, now):
+    with _LOCK:
+        if len(_OG_CACHE) >= _OG_MAX:
+            try:
+                _OG_CACHE.pop(next(iter(_OG_CACHE)), None)
+            except StopIteration:
+                pass
+        _OG_CACHE[key] = (val, now)
+
+def _img_cache_get(url, now):
+    with _LOCK:
+        if url in _IMG_CHECK_CACHE:
+            val, t = _IMG_CHECK_CACHE[url]
+            if now - t < _IMG_TTL:
+                return val
+            _IMG_CHECK_CACHE.pop(url, None)
+    return None
+
+def _img_cache_set(url, val, now):
+    with _LOCK:
+        if len(_IMG_CHECK_CACHE) >= _IMG_MAX:
+            try:
+                _IMG_CHECK_CACHE.pop(next(iter(_IMG_CHECK_CACHE)), None)
+            except StopIteration:
+                pass
+        _IMG_CHECK_CACHE[url] = (val, now)
+
+def _is_relevant_image(img_url, article_url):
+    try:
+        path = urlsplit(img_url).path.lower()
+        if re.search(r'logo|avatar|placeholder|icon|pixel|sprite|default|no-image|blank|banner-ad|advertisement', path):
+            return False
+        return True
+    except Exception:
+        return False
+
+def _is_real_image(url):
+    now = time.time()
+    cached = _img_cache_get(url, now)
+    if cached is not None:
+        return cached
+    current = url
+    orig_scheme = urlsplit(url).scheme
+    for _ in range(4):
+        if urlsplit(current).scheme not in ("http", "https"):
+            _img_cache_set(url, False, now)
+            return False
+        try:
+            r = _pinned_request("GET", current, timeout=3, max_bytes=2*1024*1024, use_range=False)
+            if r is None:
+                _img_cache_set(url, False, now)
+                return False
+            status = r["status"]
+            if status in (301, 302, 303, 307, 308):
+                nxt = r["headers"].get("location", "")
+                if not nxt:
+                    _img_cache_set(url, False, now)
+                    return False
+                nxt_abs = urljoin(current, nxt)
+                if not _is_syntax_safe_url(nxt_abs):
+                    _img_cache_set(url, False, now)
+                    return False
+                if orig_scheme == "https" and urlsplit(nxt_abs).scheme == "http":
+                    _img_cache_set(url, False, now)
+                    return False
+                current = nxt_abs
+                continue
+            ct = _clean_mime(r["headers"].get("content-type", ""))
+            if status in (200, 206) and ct.startswith("image/"):
+                if r.get("is_partial"):
+                    _img_cache_set(url, False, now)
+                    return False
+                if r.get("total") is not None and r["total"] > 2*1024*1024:
+                    _img_cache_set(url, False, now)
+                    return False
+                if len(r["body"]) >= 2*1024*1024:
+                    _img_cache_set(url, False, now)
+                    return False
+                if _is_valid_image_data(r["body"]):
+                    _img_cache_set(url, True, now)
+                    return True
+            _img_cache_set(url, False, now)
+            return False
+        except Exception:
+            _img_cache_set(url, False, now)
+            return False
+    _img_cache_set(url, False, now)
+    return False
+
+def _safe_fetch(url):
+    current = url
+    orig_scheme = urlsplit(url).scheme
+    for _ in range(4):
+        if urlsplit(current).scheme not in ("http", "https"):
+            return None
+        r = _pinned_request("GET", current, timeout=4, max_bytes=200000, use_range=True)
+        if r is None:
+            return None
+        status = r["status"]
+        if status in (301, 302, 303, 307, 308):
+            nxt = r["headers"].get("location", "")
+            if not nxt:
+                return None
+            nxt_abs = urljoin(current, nxt)
+            if not _is_syntax_safe_url(nxt_abs):
+                return None
+            if orig_scheme == "https" and urlsplit(nxt_abs).scheme == "http":
+                return None
+            current = nxt_abs
+            continue
+        if status in (200, 206):
+            ct = _clean_mime(r["headers"].get("content-type", ""))
+            if "text/html" not in ct and "application/xhtml+xml" not in ct:
+                return None
+            return current, r["body"].decode("utf-8", errors="ignore"), r.get("is_partial", False)
+        return None
+    return None
 
 def get_news_image(entry):
-    image_url = ""
-
-    # Kharab photo ko pehchanne ke liye
-    bad_words = ['logo', 'placeholder', 'icon', 'avatar', '1x1', 'pixel']
-
-    def is_good_image(url):
-        if not url:
+    if not entry:
+        return ""
+    candidates = []
+    def add_image(value):
+        if len(candidates) >= _MAX_CANDIDATES:
+            return
+        if isinstance(value, dict):
+            for k in ("url", "href", "src", "content"):
+                v = value.get(k)
+                if isinstance(v, str) and v.strip():
+                    value = v
+                    break
+                if isinstance(v, dict):
+                    add_image(v)
+                    return
+            else:
+                return
+        if not isinstance(value, str):
+            return
+        value = html.unescape(value.strip())
+        if value.startswith("//"):
+            value = "https:" + value
+        if value and value not in candidates:
+            candidates.append(value)
+    def is_valid(url):
+        if not _is_syntax_safe_url(url):
             return False
-        url_low = url.lower()
-        for bad in bad_words:
-            if bad in url_low:
+        if not _is_relevant_image(url, entry.get("link", "")):
+            return False
+        try:
+            if re.search(r'logo|avatar|placeholder|icon|pixel|sprite', urlsplit(url).path, re.I):
                 return False
-        return True
-
-    # 1. RSS Media Content
-    if hasattr(entry, 'media_content'):
-        for media in entry.media_content:
-            if is_good_image(media.get('url')):
-                image_url = media.get('url')
-                break
-
-    # 2. RSS Media Thumbnail
-    if not image_url and hasattr(entry, 'media_thumbnail'):
-        for thumb in entry.media_thumbnail:
-            if is_good_image(thumb.get('url')):
-                image_url = thumb.get('url')
-                break
-
-    # 3. RSS Enclosures
-    if not image_url and hasattr(entry, 'enclosures'):
-        for enc in entry.enclosures:
-            if is_good_image(enc.get('href')) and 'image' in enc.get('type', ''):
-                image_url = enc.get('href')
-                break
-
-    # 4. Image Links
-    if not image_url and hasattr(entry, 'links'):
-        for link in entry.links:
-            if is_good_image(link.get('href')) and 'image' in link.get('type', ''):
-                image_url = link.get('href')
-                break
-
-    # 5. Description me Image
-    if not image_url:
-        desc = entry.get('description', '') or entry.get('summary', '')
-        match = re.search(r'<img[^>]+src=["\'](.*?)["\']', desc)
-        if match and is_good_image(match.group(1)):
-            image_url = match.group(1)
-
-    return image_url
+            return True
+        except Exception:
+            return False
+    for key in ("image", "thumbnail"):
+        v = entry.get(key)
+        if isinstance(v, str):
+            add_image(v)
+        elif isinstance(v, dict):
+            add_image(v)
+        elif isinstance(v, list):
+            for item in v:
+                add_image(item)
+    for item in entry.get("media_content", []) or []:
+        add_image(item)
+    for item in entry.get("media_thumbnail", []) or []:
+        add_image(item)
+    for item in entry.get("enclosures", []) or []:
+        if isinstance(item, dict):
+            if "image" in str(item.get("type", "")).lower() or "image" in str(item.get("medium", "")).lower():
+                add_image(item)
+            elif item.get("url") or item.get("href"):
+                add_image(item)
+        else:
+            add_image(item)
+    for item in entry.get("links", []) or []:
+        if "image" in str(item.get("type", "")).lower():
+            add_image(item)
+    for item in entry.get("content", []) or []:
+        value = item.get("value", "") if isinstance(item, dict) else item
+        if isinstance(value, str):
+            for url in re.findall(r'<img[^>]+src=["\']([^"\']+)["\']', value, re.I):
+                add_image(url)
+    summary = entry.get("summary", "")
+    if isinstance(summary, str):
+        for url in re.findall(r'<img[^>]+src=["\']([^"\']+)["\']', summary, re.I):
+            add_image(url)
+    base_url = entry.get("link", "")
+    for url in candidates:
+        url = urljoin(base_url, url)
+        if is_valid(url) and _is_real_image(url):
+            return url
+    if base_url and _is_syntax_safe_url(base_url):
+        now = time.time()
+        with _LOCK:
+            cached = _OG_CACHE.get(base_url)
+        if cached:
+            cached_url, cached_time = cached
+            ttl = _OG_TTL if cached_url else _OG_EMPTY_TTL
+            if now - cached_time < ttl:
+                if cached_url and is_valid(cached_url) and _is_real_image(cached_url):
+                    return cached_url
+                if not cached_url:
+                    return ""
+                with _LOCK:
+                    _OG_CACHE.pop(base_url, None)
+            else:
+                with _LOCK:
+                    _OG_CACHE.pop(base_url, None)
+        result = _safe_fetch(base_url)
+        if result is not None:
+            try:
+                final_url, page_text, is_partial = result
+                parser = _MetaParser()
+                parser.feed(page_text[:200000])
+                if is_partial and "</head" not in page_text.lower():
+                    return ""
+                found = False
+                for raw in (parser.og, parser.twitter):
+                    if raw:
+                        url = urljoin(final_url, html.unescape(raw))
+                        if is_valid(url) and _is_real_image
 def make_cards(feed, seen, limit=15):
 
     cards = ""
