@@ -1052,14 +1052,12 @@ def get_news_image(entry):
                 content,
                 re.IGNORECASE
             )
-            candidates.extend(images)
-
-        # 5. Image Validation
-                for url in candidates:
-                    if url:
-                        return url
-
-        return ""
+                candidates.extend(images)
+    # 5. Image Validation
+    for url in candidates:
+        if url:
+            return url
+    return ""
 
     except Exception:
         return ""
