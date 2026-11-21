@@ -1035,92 +1035,33 @@ def _safe_fetch(url):
     return None
 
   class NewsImageParser(HTMLParser):
+    """Extract images from HTML."""
+
     def __init__(self):
         super().__init__()
         self.images = []
+
     def handle_starttag(self, tag, attrs):
         if tag.lower() != "img":
             return
+
         attrs = dict(attrs)
-        src = (attrs.get("src") or attrs.get("data-src") or attrs.get("data-original") or attrs.get("data-lazy-src"))
-        if src:
-            self.images.append(src)
 
-def valid_news_image(url):
-    if not url:
-        return False
-    url = html.unescape(str(url)).strip()
-    if len(url) > 2048:
-        return False
-    try:
-        p = urlsplit(url)
-        if p.scheme not in ("http", "https"):
-            return False
-        if not p.hostname:
-            return False
-        if p.username or p.password:
-            return False
-        host = p.hostname.lower()
-        if host in ("localhost",):
-            return False
-        try:
-            ip = ipaddress.ip_address(host)
-            if not ip.is_global:
-                return False
-        except ValueError:
-            pass
-        if "." not in host:
-            return False
-        bad_words = ("logo", "icon", "avatar", "placeholder", "default", "favicon", "blank", "pixel", "no-image")
-        if any(x in url.lower() for x in bad_words):
-            return False
-        return True
-    except Exception:
-        return False
+        for key in ("src", "data-src", "data-original",
+                    "data-lazy-src"):
+            value = attrs.get(key)
+            if value:
+                self.images.append(value)
 
-def get_news_image(entry):
-    candidates = []
-    for item in entry.get("media_content", []) or []:
-        if isinstance(item, dict):
-            candidates.append(item.get("url", ""))
-    for item in entry.get("media_thumbnail", []) or []:
-        if isinstance(item, dict):
-            candidates.append(item.get("url", ""))
-    for item in entry.get("enclosures", []) or []:
-        if isinstance(item, dict):
-            typ = item.get("type", "")
-            if typ.startswith("image/"):
-                candidates.append(item.get("href") or item.get("url", ""))
-    for item in entry.get("links", []) or []:
-        if isinstance(item, dict):
-            if item.get("type", "").startswith("image/"):
-                candidates.append(item.get("href", ""))
-    parser = NewsImageParser()
-    contents = []
-    for item in entry.get("content", []) or []:
-        if isinstance(item, dict):
-            contents.append(item.get("value", ""))
-    contents.append(entry.get("summary", ""))
-    for content in contents:
-        if not content:
-            continue
-        try:
-            parser.feed(str(content))
-        except Exception:
-            continue
-    candidates.extend(parser.images)
-    article_url = entry.get("link", "")
-    for candidate in candidates:
-        if not candidate:
-            continue
-        candidate = html.unescape(str(candidate)).strip()
-        candidate = urljoin(article_url, candidate)
-        if valid_news_image(candidate):
-            return candidate
-    return ""
+        for item in attrs.get("srcset", "").split(","):
+            parts = item.strip().split()
+            if parts:
+                self.images.append(parts[0])
+
+
 def make_cards(feed, seen, limit=15):
-    cards = ""
 
+    cards = ""
     count = 0
 
     for entry in getattr(feed, "entries", []):
@@ -1128,13 +1069,8 @@ def make_cards(feed, seen, limit=15):
         if count >= limit:
             break
 
-        title = clean(
-            entry.get("title", "")
-        )
-
-        link = safe_url(
-            entry.get("link", "")
-        )
+        title = clean(entry.get("title", ""))
+        link = safe_url(entry.get("link", ""))
 
         if not title or not link:
             continue
@@ -1146,28 +1082,53 @@ def make_cards(feed, seen, limit=15):
         seen.add(link)
 
         img = get_news_image(entry)
-        
-        image_html = (
-            f'<img src="{esc(img)}" alt="{esc(title)}" loading="lazy">'
-            if img else ""
-        )
+
+        image_html = ""
+
+        if img and valid_news_image(img):
+            image_html = f"""
+            <div class="news-image-box">
+                <img
+                    src="{esc(img)}"
+                    alt="{esc(title)}"
+                    loading="lazy"
+                    decoding="async"
+                    class="news-image"
+                >
+            </div>
+            """
 
         description = clean(
             entry.get("summary", "")
             or entry.get("description", "")
         )
 
+        description = description[:350]
+
         cards += f"""
-        <div class="card">
+        <article class="card news-card">
+
             {image_html}
-            <h3>{esc(title)}</h3>
-            <p>{esc(description)}</p>
-            <a href="{esc(link)}"
-               target="_blank"
-               rel="noopener noreferrer">
-               Poori Khabar Padhein
-            </a>
-        </div>
+
+            <div class="news-card-content">
+
+                <h3 class="news-title">
+                    {esc(title)}
+                </h3>
+
+                <p class="news-description">
+                    {esc(description)}
+                </p>
+
+                <a href="{esc(link)}"
+                   target="_blank"
+                   rel="noopener noreferrer"
+                   class="news-read-more">
+                    पूरी खबर पढ़ें →
+                </a>
+
+            </div>
+        </article>
         """
 
         count += 1
