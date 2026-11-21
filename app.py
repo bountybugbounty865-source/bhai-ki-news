@@ -1013,100 +1013,199 @@ def _safe_fetch(url):
             return url, body
     except Exception:
         return None
+# MULTI-SOURCE IMAGE HTML PARSER
 
-def get_news_image(entry):
+class _NewsImageParser(HTMLParser):
+
+    def __init__(self):
+        super().__init__(convert_charrefs=True)
+        self.images = []
+
+    def handle_starttag(self, tag, attrs):
+
+        if tag.lower() != "img":
+            return
+
+        attrs = {
+            str(k).lower(): v
+            for k, v in attrs if k
+        }
+
+        for key in (
+            "src",
+            "data-src",
+            "data-original",
+            "data-lazy-src",
+            "data-original-src",
+            "data-url"
+        ):
+
+            value = attrs.get(key)
+
+            if value:
+                self.images.append(value)
+
+        for key in ("srcset", "data-srcset"):
+
+            value = attrs.get(key)
+
+            if value:
+                for item in value.split(","):
+                    parts = item.strip().split()
+
+                    if parts:
+                        self.images.append(parts[0])
+
+
+# ARTICLE IMAGE EXTRACTION
+
+def _extract_article_images(article_url):
+
+    now = time.time()
+
+    with _LOCK:
+
+        cached = _OG_CACHE.get(article_url)
+
+        if cached:
+
+            images, timestamp = cached
+
+            ttl = _OG_TTL if images else _OG_EMPTY_TTL
+
+            if now - timestamp < ttl:
+                return list(images)
+
+    candidates = []
+    current = article_url
+    original_scheme = urlsplit(article_url).scheme
+    visited = set()
+
     try:
-        candidates = []
 
-        def add_url(url):
-            if isinstance(url, str):
-                url = html.unescape(url).strip()
-                if url and url not in candidates:
-                    candidates.append(url)
+        for _ in range(4):
 
-        def extract_html_images(content):
-            if not isinstance(content, str):
-                return
+            if current in visited:
+                break
 
-            patterns = [
-                r'<img[^>]+src=["\']([^"\']+)["\']',
-                r'<img[^>]+data-src=["\']([^"\']+)["\']',
-                r'<img[^>]+data-original=["\']([^"\']+)["\']',
-                r'<img[^>]+srcset=["\']([^"\']+)["\']'
-            ]
+            visited.add(current)
 
-            for pattern in patterns:
-                for match in re.findall(
-                    pattern, content, re.IGNORECASE
+            if not _is_syntax_safe_url(current):
+                break
+
+            result = _pinned_request(
+                "GET",
+                current,
+                timeout=5,
+                max_bytes=200000,
+                use_range=True
+            )
+
+            if not result:
+                break
+
+            status = result["status"]
+
+            if status in (301, 302, 303, 307, 308):
+
+                location = result["location"]
+
+                if not location:
+                    break
+
+                next_url = urljoin(current, location)
+
+                if not _is_syntax_safe_url(next_url):
+                    break
+
+                if (
+                    original_scheme == "https"
+                    and urlsplit(next_url).scheme != "https"
                 ):
-                    if "," in match and " " in match:
-                        for item in match.split(","):
-                            add_url(item.strip().split()[0])
-                    else:
-                        add_url(match)
+                    break
 
-        # 1. Media Content
-        mc = entry.get("media_content", [])
-
-        if isinstance(mc, list):
-            for item in mc:
-                if isinstance(item, dict):
-                    add_url(item.get("url"))
-
-        # 2. Media Thumbnail
-        mt = entry.get("media_thumbnail", [])
-
-        if isinstance(mt, list):
-            for item in mt:
-                if isinstance(item, dict):
-                    add_url(item.get("url"))
-
-        # 3. Enclosures
-        enclosures = entry.get("enclosures", [])
-
-        if isinstance(enclosures, list):
-            for enc in enclosures:
-                if isinstance(enc, dict):
-                    mime = enc.get("type", "")
-
-                    if mime.startswith("image/") or not mime:
-                        add_url(enc.get("href") or enc.get("url"))
-
-        # 4. Image Links
-        links = entry.get("links", [])
-
-        if isinstance(links, list):
-            for link in links:
-                if isinstance(link, dict):
-                    mime = link.get("type", "")
-
-                    if mime.startswith("image/"):
-                        add_url(link.get("href"))
-
-        # 5. Summary
-        extract_html_images(entry.get("summary", ""))
-
-        # 6. Content
-        content = entry.get("content", [])
-
-        if isinstance(content, list):
-            for item in content:
-                if isinstance(item, dict):
-                    extract_html_images(item.get("value", ""))
-
-        # 7. Image Validation
-        for url in candidates:
-            try:
-                if valid_news_image(url):
-                    return url
-            except Exception:
+                current = next_url
                 continue
 
-        return ""
+            if status not in (200, 206):
+                break
+
+            if result.get("is_partial"):
+                break
+
+            mime = _clean_mime(
+                result["headers"].get("content-type", "")
+            )
+
+            if mime not in (
+                "text/html",
+                "application/xhtml+xml"
+            ):
+                break
+
+            body = result["body"].decode(
+                "utf-8",
+                errors="ignore"
+            )
+
+            # Open Graph + Twitter
+
+            meta = _MetaParser()
+            meta.feed(body)
+
+            if meta.og:
+                candidates.append(
+                    urljoin(current, meta.og)
+                )
+
+            if meta.twitter:
+                candidates.append(
+                    urljoin(current, meta.twitter)
+                )
+
+            # Article HTML Images
+
+            parser = _NewsImageParser()
+            parser.feed(body)
+
+            candidates.extend(parser.images)
+
+            break
 
     except Exception:
-        return ""
-    return ""
+        pass
+
+    final_images = []
+    seen = set()
+
+    for image_url in candidates:
+
+        if not isinstance(image_url, str):
+            continue
+
+        image_url = html.unescape(image_url).strip()
+
+        if not image_url or image_url in seen:
+            continue
+
+        image_url = urljoin(current, image_url)
+
+        if not _is_syntax_safe_url(image_url):
+            continue
+
+        seen.add(image_url)
+        final_images.append(image_url)
+
+        if len(final_images) >= _MAX_CANDIDATES:
+            break
+
+    _og_cache_set(
+        article_url,
+        final_images,
+        now
+    )
+
+    return final_images
 
 
 def make_cards(feed, seen, limit=15):
