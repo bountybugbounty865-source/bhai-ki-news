@@ -564,38 +564,59 @@ def safe_url(url):
         return ""
 
 
-def get_img(entry, title):
+import re
 
-    try:
+def get_news_image(entry):
+    image_url = ""
 
-        media = entry.get("media_content", [])
+    # Kharab photo ko pehchanne ke liye
+    bad_words = ['logo', 'placeholder', 'icon', 'avatar', '1x1', 'pixel']
 
-        if media:
+    def is_good_image(url):
+        if not url:
+            return False
+        url_low = url.lower()
+        for bad in bad_words:
+            if bad in url_low:
+                return False
+        return True
 
-            url = safe_url(
-                media[0].get("url", "")
-            )
+    # 1. RSS Media Content
+    if hasattr(entry, 'media_content'):
+        for media in entry.media_content:
+            if is_good_image(media.get('url')):
+                image_url = media.get('url')
+                break
 
-            if url:
-                return url
+    # 2. RSS Media Thumbnail
+    if not image_url and hasattr(entry, 'media_thumbnail'):
+        for thumb in entry.media_thumbnail:
+            if is_good_image(thumb.get('url')):
+                image_url = thumb.get('url')
+                break
 
-        for link in entry.get("links", []):
+    # 3. RSS Enclosures
+    if not image_url and hasattr(entry, 'enclosures'):
+        for enc in entry.enclosures:
+            if is_good_image(enc.get('href')) and 'image' in enc.get('type', ''):
+                image_url = enc.get('href')
+                break
 
-            if "image" in link.get("type", ""):
+    # 4. Image Links
+    if not image_url and hasattr(entry, 'links'):
+        for link in entry.links:
+            if is_good_image(link.get('href')) and 'image' in link.get('type', ''):
+                image_url = link.get('href')
+                break
 
-                url = safe_url(
-                    link.get("href", "")
-                )
+    # 5. Description me Image
+    if not image_url:
+        desc = entry.get('description', '') or entry.get('summary', '')
+        match = re.search(r'<img[^>]+src=["\'](.*?)["\']', desc)
+        if match and is_good_image(match.group(1)):
+            image_url = match.group(1)
 
-                if url:
-                    return url
-
-    except Exception:
-        pass
-
-    return ""
-
-
+    return image_url
 def make_cards(feed, seen, limit=15):
 
     cards = ""
@@ -625,8 +646,7 @@ def make_cards(feed, seen, limit=15):
         seen.add(link)
 
 
-        img = get_img(entry, 
-title)
+        img = get_news_image(entry)
         image_html = (
             f'<img src="{esc(img)}" alt="{esc(title)}" loading="lazy">'
             if img else ""
