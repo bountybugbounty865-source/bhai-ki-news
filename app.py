@@ -1034,93 +1034,90 @@ def _safe_fetch(url):
         return None
     return None
 
-def get_news_image(entry):
-    if not entry:
-        return ""
-    candidates = []
-    def add_image(value):
-        if len(candidates) >= _MAX_CANDIDATES:
+  class NewsImageParser(HTMLParser):
+    def __init__(self):
+        super().__init__()
+        self.images = []
+    def handle_starttag(self, tag, attrs):
+        if tag.lower() != "img":
             return
-        if isinstance(value, dict):
-            for k in ("url", "href", "src", "content"):
-                v = value.get(k)
-                if isinstance(v, str) and v.strip():
-                    value = v
-                    break
-                if isinstance(v, dict):
-                    add_image(v)
-                    return
-            else:
-                return
-        if not isinstance(value, str):
-            return
-        value = html.unescape(value.strip())
-        if value.startswith("//"):
-            value = "https:" + value
-        if value and value not in candidates:
-            candidates.append(value)
-    def is_valid(url):
-        if not _is_syntax_safe_url(url):
+        attrs = dict(attrs)
+        src = (attrs.get("src") or attrs.get("data-src") or attrs.get("data-original") or attrs.get("data-lazy-src"))
+        if src:
+            self.images.append(src)
+
+def valid_news_image(url):
+    if not url:
+        return False
+    url = html.unescape(str(url)).strip()
+    if len(url) > 2048:
+        return False
+    try:
+        p = urlsplit(url)
+        if p.scheme not in ("http", "https"):
             return False
-        if not _is_relevant_image(url, entry.get("link", "")):
+        if not p.hostname:
+            return False
+        if p.username or p.password:
+            return False
+        host = p.hostname.lower()
+        if host in ("localhost",):
             return False
         try:
-            if re.search(r'logo|avatar|placeholder|icon|pixel|sprite', urlsplit(url).path, re.I):
+            ip = ipaddress.ip_address(host)
+            if not ip.is_global:
                 return False
-            return True
-        except Exception:
+        except ValueError:
+            pass
+        if "." not in host:
             return False
-    for key in ("image", "thumbnail"):
-        v = entry.get(key)
-        if isinstance(v, str):
-            add_image(v)
-        elif isinstance(v, dict):
-            add_image(v)
-        elif isinstance(v, list):
-            for item in v:
-                add_image(item)
+        bad_words = ("logo", "icon", "avatar", "placeholder", "default", "favicon", "blank", "pixel", "no-image")
+        if any(x in url.lower() for x in bad_words):
+            return False
+        return True
+    except Exception:
+        return False
+
+def get_news_image(entry):
+    candidates = []
     for item in entry.get("media_content", []) or []:
-        add_image(item)
+        if isinstance(item, dict):
+            candidates.append(item.get("url", ""))
     for item in entry.get("media_thumbnail", []) or []:
-        add_image(item)
+        if isinstance(item, dict):
+            candidates.append(item.get("url", ""))
     for item in entry.get("enclosures", []) or []:
         if isinstance(item, dict):
-            if "image" in str(item.get("type", "")).lower() or "image" in str(item.get("medium", "")).lower():
-                add_image(item)
-            elif item.get("url") or item.get("href"):
-                add_image(item)
-        else:
-            add_image(item)
+            typ = item.get("type", "")
+            if typ.startswith("image/"):
+                candidates.append(item.get("href") or item.get("url", ""))
     for item in entry.get("links", []) or []:
-        if "image" in str(item.get("type", "")).lower():
-            add_image(item)
+        if isinstance(item, dict):
+            if item.get("type", "").startswith("image/"):
+                candidates.append(item.get("href", ""))
+    parser = NewsImageParser()
+    contents = []
     for item in entry.get("content", []) or []:
-        value = item.get("value", "") if isinstance(item, dict) else item
-        if isinstance(value, str):
-            for url in re.findall(r'<img[^>]+src=["\']([^"\']+)["\']', value, re.I):
-                add_image(url)
-    summary = entry.get("summary", "")
-    if isinstance(summary, str):
-        for url in re.findall(r'<img[^>]+src=["\']([^"\']+)["\']', summary, re.I):
-            add_image(url)
-    base_url = entry.get("link", "")
-    for url in candidates:
-        url = urljoin(base_url, url)
-        if is_valid(url) and is_syntax_safe_url(url):
-            return url    # fallback: khabar ke page se asli og:image uthao
-    try:
-        r = requests.get(base_url, timeout=6, headers={"User-Agent": "Mozilla/5.0"})
-        if r.status_code == 200:
-            m = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', r.text, re.I)
-            if not m:
-                m = re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']', r.text, re.I)
-            if m:
-                og = urljoin(base_url, m.group(1).strip())
-                if is_valid(og) and is_syntax_safe_url(og):
-                    return og
-    except Exception:
-        pass
-    return ""  
+        if isinstance(item, dict):
+            contents.append(item.get("value", ""))
+    contents.append(entry.get("summary", ""))
+    for content in contents:
+        if not content:
+            continue
+        try:
+            parser.feed(str(content))
+        except Exception:
+            continue
+    candidates.extend(parser.images)
+    article_url = entry.get("link", "")
+    for candidate in candidates:
+        if not candidate:
+            continue
+        candidate = html.unescape(str(candidate)).strip()
+        candidate = urljoin(article_url, candidate)
+        if valid_news_image(candidate):
+            return candidate
+    return ""
 def make_cards(feed, seen, limit=15):
     cards = ""
 
