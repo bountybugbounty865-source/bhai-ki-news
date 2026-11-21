@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="hi">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0">
+
+    <meta name="theme-color" content="#111827">
+
+    <title>Bhai Ki News | Latest News</title>
+
+    <meta name="description"
+          content="Bhai Ki News - Latest news and updates.">
+
+    <style>
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #f3f4f6;
+            color: #111827;
+        }
+
+        header {
+            background: #111827;
+            color: white;
+            padding: 22px 15px;
+            text-align: center;
+        }
+
+        header h1 {
+            font-size: 27px;
+            font-weight: 800;
+        }
+
+        header p {
+            margin-top: 7px;
+            color: #cbd5e1;
+            font-size: 13px;
+        }
+
+        .search-container {
+            max-width: 700px;
+            margin: 22px auto;
+            padding: 0 15px;
+        }
+
+        .search-form {
+            display: flex;
+            gap: 8px;
+        }
+
+        .search-form input {
+            flex: 1;
+            min-width: 0;
+            padding: 13px;
+            border: 1px solid #d1d5db;
+            border-radius: 9px;
+            font-size: 15px;
+            outline: none;
+        }
+
+        .search-form input:focus {
+            border-color: #2563eb;
+        }
+
+        .search-form button {
+            padding: 12px 18px;
+            background: #2563eb;
+            color: white;
+            border: none;
+            border-radius: 9px;
+            cursor: pointer;
+        }
+
+        .news-container {
+            max-width: 1150px;
+            margin: auto;
+            padding: 10px 15px 40px;
+            display: grid;
+            grid-template-columns:
+                repeat(auto-fill, minmax(270px, 1fr));
+            gap: 22px;
+        }
+
+        .news-card {
+            background: white;
+            border-radius: 13px;
+            overflow: hidden;
+            box-shadow: 0 3px 12px rgba(0,0,0,0.07);
+            transition: transform 0.2s;
+        }
+
+        .news-card:hover {
+            transform: translateY(-4px);
+        }
+
+        .news-image {
+            width: 100%;
+            height: 190px;
+            background: #111827;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        .news-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .image-fallback {
+            color: white;
+            font-size: 20px;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        .news-content {
+            padding: 17px;
+        }
+
+        .category {
+            display: inline-block;
+            background: #dbeafe;
+            color: #1d4ed8;
+            padding: 5px 9px;
+            border-radius: 5px;
+            font-size: 11px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .news-title {
+            font-size: 18px;
+            line-height: 1.5;
+            margin-bottom: 10px;
+        }
+
+        .news-description {
+            color: #64748b;
+            font-size: 14px;
+            line-height: 1.6;
+            margin-bottom: 13px;
+        }
+
+        .news-meta {
+            color: #64748b;
+            font-size: 12px;
+            margin-bottom: 14px;
+        }
+
+        .read-more {
+            display: inline-block;
+            background: #2563eb;
+            color: white;
+            text-decoration: none;
+            padding: 9px 14px;
+            border-radius: 7px;
+            font-size: 13px;
+        }
+
+        .empty-message {
+            text-align: center;
+            padding: 50px 15px;
+            color: #64748b;
+            grid-column: 1 / -1;
+        }
+
+        footer {
+            background: #111827;
+            color: #cbd5e1;
+            text-align: center;
+            padding: 20px;
+            font-size: 13px;
+        }
+
+        @media (max-width: 600px) {
+
+            header h1 {
+                font-size: 23px;
+            }
+
+            .news-container {
+                grid-template-columns: 1fr;
+            }
+
+            .news-image {
+                height: 210px;
+            }
+
+        }
+
+    </style>
+
+</head>
+
+<body>
+
+<header>
+
+    <h1>📰 BHAI KI NEWS</h1>
+
+    <p>Latest News | Trusted Sources | Fast Updates</p>
+
+</header>
+
+
+<section class="search-container">
+
+    <form class="search-form" method="GET" action="/">
+
+        <input
+            type="search"
+            name="q"
+            placeholder="News Search Kare..."
+            value="{{ query }}"
+            maxlength="100"
+        >
+
+        <button type="submit">
+            Search
+        </button>
+
+    </form>
+
+</section>
+
+
+<main class="news-container">
+
+    {% if news %}
+
+        {% for item in news %}
+
+        <article class="news-card">
+
+            <div class="news-image">
+
+                {% if item.image %}
+
+                    <img
+                        src="{{ item.image }}"
+                        alt="{{ item.title }}"
+                        loading="lazy"
+                        referrerpolicy="no-referrer"
+                        onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+                    >
+
+                    <div
+                        class="image-fallback"
+                        style="display:none;"
+                    >
+                        BHAI KI NEWS
+                    </div>
+
+                {% else %}
+
+                    <div class="image-fallback">
+                        BHAI KI NEWS
+                    </div>
+
+                {% endif %}
+
+            </div>
+
+
+            <div class="news-content">
+
+                <span class="category">
+                    {{ item.category }}
+                </span>
+
+                <h2 class="news-title">
+                    {{ item.title }}
+                </h2>
+
+                <p class="news-description">
+                    {{ item.description[:220] }}
+                </p>
+
+                <div class="news-meta">
+
+                    Source: {{ item.source }}
+
+                    <br><br>
+
+                    {% if item.published %}
+
+                        {{ item.published }}
+
+                    {% else %}
+
+                        Date unavailable
+
+                    {% endif %}
+
+                </div>
+
+                <a
+                    href="{{ item.link }}"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="read-more"
+                >
+                    Read Full News →
+                </a>
+
+            </div>
+
+        </article>
+
+        {% endfor %}
+
+    {% else %}
+
+        <div class="empty-message">
+
+            <h2>No News Found</h2>
+
+            <p>Abhi is search se related news available nahi hai.</p>
+
+        </div>
+
+    {% endif %}
+
+</main>
+
+
+<footer>
+
+    © 2026 Bhai Ki News. All Rights Reserved.
+
+</footer>
+
+</body>
+  </html>
