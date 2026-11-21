@@ -1137,9 +1137,18 @@ def get_news_image(entry):
                 for raw in (parser.og, parser.twitter):
                     if raw:
                         url = urljoin(final_url, html.unescape(raw))
-                        if is_valid(url) and _is_real_image
+                                                if is_valid(url) and _is_real_image(url):
+                            _og_cache_set(base_url, url, now)
+                            return url
+                        found = True
+                if is_partial and not found:
+                    return ""
+            except Exception:
+                pass
+        if result is not None and not result[2]:
+            _og_cache_set(base_url, "", now)
+    return ""
 def make_cards(feed, seen, limit=15):
-
     cards = ""
 
     count = 0
@@ -1167,7 +1176,7 @@ def make_cards(feed, seen, limit=15):
         seen.add(link)
 
         img = get_news_image(entry)
-        print("IMAGE DEBUG:", title, img)
+        
         image_html = (
             f'<img src="{esc(img)}" alt="{esc(title)}" loading="lazy">'
             if img else ""
