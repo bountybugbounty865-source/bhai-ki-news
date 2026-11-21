@@ -1030,9 +1030,6 @@ def _safe_fetch(url):
             ct = _clean_mime(r["headers"].get("content-type", ""))
             if "text/html" not in ct and "application/xhtml+xml" not in ct:
                 return None
-            return current, r["body"].decode("utf-8", errors="ignore"), r.get("is_partial", False)
-        return None
-    return None
 
   class NewsImageParser(HTMLParser):
     """Extract images from HTML."""
