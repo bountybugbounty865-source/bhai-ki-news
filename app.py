@@ -465,38 +465,47 @@ def get_cached_feed(name, url):
     now = time.time()
 
     with FEED_LOCK:
-
         cached = FEED_CACHE.get(name)
 
         # 1. Return fresh cache
         if cached and now - cached["time"] < FEED_CACHE_TIME:
             return cached["feed"]
 
-        # 2. Fetch only when cache expires
-        feed = fetch_feed(url)
+    # 2. Fetch outside lock
+    feed = fetch_feed(url)
 
-        # 3. Save successful feed
-        if feed is not None:
+    # 3. Save successful feed
+    if feed is not None:
+
+        with FEED_LOCK:
+
+            existing = FEED_CACHE.get(name)
+
+            if existing and time.time() - existing["time"] < FEED_CACHE_TIME:
+                return existing["feed"]
 
             FEED_CACHE[name] = {
                 "time": time.time(),
                 "feed": feed
             }
 
-            return feed
+        return feed
 
-        # 4. Keep old news if RSS server fails
-        if cached:
+    # 4. Check cache again
+    with FEED_LOCK:
+        cached = FEED_CACHE.get(name)
 
-            app.logger.warning(
-                "Using stale RSS cache: %s", name
-            )
+    # 5. Keep old news if RSS fails
+    if cached:
 
-            return cached["feed"]
+        app.logger.warning(
+            "Using stale RSS cache: %s", name
+        )
 
-        # 5. No cache available
-        return feedparser.parse("")
+        return cached["feed"]
 
+    # 6. No cache available
+    return feedparser.parse("")
 
 # =====================================================
 # CONTENT HELPERS
