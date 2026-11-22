@@ -1391,22 +1391,22 @@ def get_news_image(entry):
             and _is_syntax_safe_url(article_url)
         ):
 
-            try:
-
-                article_images = _extract_article_images(
-                    article_url
-                )
-
-                for image_url in article_images:
-
-                    add_url(image_url)
-
-                    if len(candidates) >= _MAX_CANDIDATES:
-                        break
-
+        try:
+            article_images = article.get("image") or article.get("urlToImage") or article.get("thumbnail")
+            candidates = article_images.split(",") if isinstance(article_images, str) else [article_images]
+            if not candidates:
+                return ""
+            for image_url in candidates:
+                if _is_relevant_image(image_url, article_url):
+                    return image_url
+            for image_url in candidates:
+                try:
+                    if _is_relevant_image(image_url, article_url):
+                        return image_url
+                except Exception:
+                    continue
         except Exception:
             pass
-
         # 7. FAST
         for image_url in candidates:
             if _is_relevant_image(image_url, article_url):
