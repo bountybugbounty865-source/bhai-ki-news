@@ -1380,81 +1380,92 @@ def get_news_image(entry):
 
             if len(candidates) >= _MAX_CANDIDATES:
                 break
-
         # ---------------------------------
         # 6. ARTICLE IMAGE EXTRACTION
         # ---------------------------------
 
         if (
-    article_url
-    and isinstance(article_url, str)
-    and not any(
-        domain in article_url.lower()
-        for domain in (
-            "/videos/",
-            "/video/",
-            "youtube.com",
-            "youtu.be",
-            "facebook.com",
-            "instagram.com",
-            "twitter.com",
-            "x.com",
-            "reddit.com",
-            "google"
-        )
-    )
-    and not article_url.lower().startswith("data:")
-):
-    try:
-        article_images = (
-            article.get("image")
-            or article.get("urlToImage")
-            or article.get("thumbnail")
-        )
+            article_url
+            and not any(
+                domain in article_url.lower()
+                for domain in (
+                    "/videos/",
+                    "/video/",
+                    "youtube.com",
+                    "youtu.be",
+                    "facebook.com",
+                    "instagram.com",
+                    "twitter.com",
+                    "x.com",
+                    "reddit.com",
+                    "google"
+                )
+            )
+            and not article_url.lower().startswith("data:")
+        ):
 
-        if isinstance(article_images, str):
-            candidates = article_images.split(",")
-        elif isinstance(article_images, list):
-            candidates = article_images
-        else:
-            candidates = [article_images]
+            article_images = (
+                entry.get("image")
+                or entry.get("urlToImage")
+                or entry.get("thumbnail")
+            )
 
-        for image_url in candidates:
-            try:
+            if isinstance(article_images, str):
+                image_candidates = article_images.split(",")
+
+            elif isinstance(article_images, list):
+                image_candidates = article_images
+
+            else:
+                image_candidates = [article_images]
+
+            for image_url in image_candidates:
+
                 if isinstance(image_url, dict):
                     image_url = (
                         image_url.get("url")
                         or image_url.get("src")
                     )
 
-                if not isinstance(image_url, str):
-                    continue
+                add_url(image_url)
 
-                image_url = image_url.strip()
+        # ---------------------------------
+        # 7. FINAL IMAGE VALIDATION
+        # ---------------------------------
 
-                if _is_relevant_image(image_url, article_url):
+        for image_url in candidates:
+
+            try:
+                if _is_relevant_image(
+                    image_url,
+                    article_url
+                ):
                     return image_url
 
             except Exception:
                 continue
 
-    except Exception:
-        pass
-        
+        # ---------------------------------
         # 8. NO VALID IMAGE
+        # ---------------------------------
+
         return ""
+
     except Exception as e:
+
         try:
             app.logger.warning(
                 "News image extraction failed: %s",
                 str(e)
             )
+
         except Exception:
             pass
-        return "" 
-        return ""
-def make_cards(feed, seen, limit=15):
 
+        return ""
+
+
+def make_cards(feed, seen, limit=15):
     cards = ""
     count = 0
 
