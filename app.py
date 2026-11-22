@@ -460,7 +460,6 @@ def fetch_feed(url):
 
         return None
 
-
 def get_cached_feed(name, url):
 
     now = time.time()
@@ -469,15 +468,14 @@ def get_cached_feed(name, url):
 
         cached = FEED_CACHE.get(name)
 
-        # Return fresh cache
+        # 1. Return fresh cache
         if cached and now - cached["time"] < FEED_CACHE_TIME:
-
             return cached["feed"]
 
-        # Fetch only when cache expires
+        # 2. Fetch only when cache expires
         feed = fetch_feed(url)
 
-        # Successful fetch
+        # 3. Save successful feed
         if feed is not None:
 
             FEED_CACHE[name] = {
@@ -487,7 +485,7 @@ def get_cached_feed(name, url):
 
             return feed
 
-        # Keep old news if RSS server fails
+        # 4. Keep old news if RSS server fails
         if cached:
 
             app.logger.warning(
@@ -496,7 +494,7 @@ def get_cached_feed(name, url):
 
             return cached["feed"]
 
-        # No old cache available
+        # 5. No cache available
         return feedparser.parse("")
 
 
