@@ -2233,7 +2233,56 @@ def style():
         }
 
     }
+/* PROFESSIONAL NEWS LAYOUT */
 
+.news-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+/* FIRST NEWS - FEATURED */
+
+.news-grid .card:first-child {
+    grid-column: span 2;
+}
+
+.news-grid .card:first-child img {
+    height: 320px;
+}
+
+.news-grid .card:first-child h3 {
+    font-size: 24px;
+    line-height: 1.5;
+}
+
+/* BREAKING BAR */
+
+.breaking-bar {
+    position: relative;
+    z-index: 2;
+    min-height: 48px;
+}
+
+/* MOBILE RESPONSIVE */
+
+@media(max-width: 760px) {
+
+    .news-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .news-grid .card:first-child {
+        grid-column: span 1;
+    }
+
+    .news-grid .card:first-child img {
+        height: 220px;
+    }
+
+    .news-grid .card:first-child h3 {
+        font-size: 20px;
+    }
+
+}
     </style>
     """
 
@@ -2308,6 +2357,10 @@ def search_box():
     </div>
     """
 
+# =====================================================
+# PROFESSIONAL HOME PAGE
+# =====================================================
+
 @app.route("/")
 def home():
 
@@ -2315,41 +2368,152 @@ def home():
     seen = set()
     cards = ""
 
+    # RSS NEWS LOADING
     if cat:
+
         for name, url in FEEDS.items():
+
             if cat.lower() in name.lower():
-                cards += make_cards(get_cached_feed(name, url), seen, limit=20)
+
+                cards += make_cards(
+                    get_cached_feed(name, url),
+                    seen,
+                    limit=20
+                )
+
     else:
+
         with ThreadPoolExecutor(max_workers=4) as ex:
-            fut = {n: ex.submit(get_cached_feed, n, u) for n, u in FEEDS.items()}
+
+            fut = {
+                n: ex.submit(get_cached_feed, n, u)
+                for n, u in FEEDS.items()
+            }
+
             for n in FEEDS:
+
                 try:
-                    cards += make_cards(fut[n].result(), seen, limit=10)
+
+                    cards += make_cards(
+                        fut[n].result(),
+                        seen,
+                        limit=10
+                    )
+
                 except Exception:
                     pass
 
+    # TODAY NOTE
     note = get_today_note()
+
+    # DATABASE ARTICLES
     arts = get_articles()
 
     my = ""
+
     for a in arts[:6]:
-        my += f'<div class="card"><h3>{esc(a["title"])}</h3><p>{esc(a["category"])}</p><p>{esc(a["content"][:180])}</p></div>'
 
+        my += f"""
+        <div class="card">
+            <h3>{esc(a["title"])}</h3>
+            <p>{esc(a["category"])}</p>
+            <p>{esc(a["content"][:180])}</p>
+        </div>
+        """
+
+    # FALLBACK ARTICLES
     if not my:
-        for t, c, txt in MY_NEW_ARTICLES:
-            my += f'<div class="card"><h3>{esc(t)}</h3><p>{esc(c)}</p><p>{esc(txt)}</p></div>'
 
-    body = f"""
-    {search_box()}
+        for t, c, txt in MY_NEW_ARTICLES:
+
+            my += f"""
+            <div class="card">
+                <h3>{esc(t)}</h3>
+                <p>{esc(c)}</p>
+                <p>{esc(txt)}</p>
+            </div>
+            """
+
+    # NEWS FALLBACK
+    news_content = cards or """
     <div class="box">
-        <h2>📝 Aaj Ka Note - {esc(note["type"])}</h2>
-        <h3>{esc(note["title"])}</h3>
-        <p>{esc(note["content"])}</p>
+        <p>अभी खबरें लोड नहीं हुई हैं।
+        कृपया कुछ देर बाद प्रयास करें।</p>
     </div>
-    <h2>✍️ Mere Articles</h2>
-    <div class="grid">{my}</div>
-    <h2>📰 Taaza Khabar</h2>
-    <div class="grid">{cards or "<p>Abhi khabar load nahi hui</p>"}</div>
+    """
+
+    # PROFESSIONAL HOMEPAGE
+    body = f"""
+
+    <!-- BREAKING NEWS BAR -->
+
+    <div class="breaking-bar">
+
+        <span class="breaking-label">
+            🔴 ताजा खबर
+        </span>
+
+        <a href="#latest">
+            देश-दुनिया की ताजा खबरें पढ़ें →
+        </a>
+
+    </div>
+
+
+    <!-- SEARCH -->
+
+    {search_box()}
+
+
+    <!-- FEATURED AND LATEST NEWS -->
+
+    <section id="latest">
+
+        <h2>📰 आज की प्रमुख खबरें</h2>
+
+        <div class="grid news-grid">
+
+            {news_content}
+
+        </div>
+
+    </section>
+
+
+    <!-- TODAY NOTE -->
+
+    <section>
+
+        <div class="box">
+
+            <h2>
+                📝 Aaj Ka Note -
+                {esc(note["type"])}
+            </h2>
+
+            <h3>{esc(note["title"])}</h3>
+
+            <p>{esc(note["content"])}</p>
+
+        </div>
+
+    </section>
+
+
+    <!-- MY ARTICLES -->
+
+    <section>
+
+        <h2>✍️ Mere Articles</h2>
+
+        <div class="grid">
+
+            {my or '<div class="box">Abhi koi article nahi hai.</div>'}
+
+        </div>
+
+    </section>
+
     """
 
     return page("Home", body)
