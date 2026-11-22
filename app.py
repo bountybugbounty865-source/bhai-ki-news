@@ -1428,7 +1428,26 @@ def get_news_image(entry):
                     )
 
                 add_url(image_url)
+        # ---------------------------------
+        # 6.5 ARTICLE PAGE IMAGE EXTRACTION
+        # ---------------------------------
 
+        if article_url:
+
+            try:
+                article_images = _extract_article_images(
+                    article_url
+                )
+
+                for image_url in article_images:
+                    add_url(image_url)
+
+            except Exception as e:
+
+                app.logger.warning(
+                    "Article image extraction failed: %s",
+                    str(e)
+                )
         # ---------------------------------
         # 7. FINAL IMAGE VALIDATION
         # ---------------------------------
