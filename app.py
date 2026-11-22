@@ -440,7 +440,7 @@ def fetch_feed(url):
 
         with urllib.request.urlopen(
             req,
-            timeout=10
+            timeout=4
         ) as response:
 
             content = response.read(
