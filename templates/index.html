@@ -2,346 +2,857 @@
 <html lang="hi">
 
 <head>
-    <meta charset="UTF-8">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#10213a">
 
-    <meta name="viewport"
-          content="width=device-width, initial-scale=1.0">
+<title>BHAI KI NEWS | National News Portal</title>
 
-    <meta name="theme-color" content="#111827">
+<meta name="description"
+content="BHAI KI NEWS - National, International, Uttar Pradesh, Business, Technology and Education News.">
 
-    <title>Bhai Ki News | Latest News</title>
+<style>
 
-    <meta name="description"
-          content="Bhai Ki News - Latest news and updates.">
+*{
+    margin:0;
+    padding:0;
+    box-sizing:border-box;
+}
 
-    <style>
+:root{
+    --navy:#10213a;
+    --blue:#174ea6;
+    --red:#e11d36;
+    --white:#ffffff;
+    --bg:#f3f5f8;
+    --text:#172033;
+    --muted:#64748b;
+}
 
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+body{
+    font-family:Arial,Helvetica,sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    line-height:1.6;
+}
 
-        body {
-            font-family: Arial, sans-serif;
-            background: #f3f4f6;
-            color: #111827;
-        }
+a{
+    text-decoration:none;
+    color:inherit;
+}
 
-        header {
-            background: #111827;
-            color: white;
-            padding: 22px 15px;
-            text-align: center;
-        }
+/* HEADER */
 
-        header h1 {
-            font-size: 27px;
-            font-weight: 800;
-        }
+.top-header{
+    background:var(--navy);
+    color:white;
+}
 
-        header p {
-            margin-top: 7px;
-            color: #cbd5e1;
-            font-size: 13px;
-        }
+.header-inner{
+    max-width:1250px;
+    margin:auto;
+    padding:20px 18px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:20px;
+}
 
-        .search-container {
-            max-width: 700px;
-            margin: 22px auto;
-            padding: 0 15px;
-        }
+.logo{
+    font-size:27px;
+    font-weight:900;
+    letter-spacing:.5px;
+}
 
-        .search-form {
-            display: flex;
-            gap: 8px;
-        }
+.logo span{
+    color:#ff394e;
+}
 
-        .search-form input {
-            flex: 1;
-            min-width: 0;
-            padding: 13px;
-            border: 1px solid #d1d5db;
-            border-radius: 9px;
-            font-size: 15px;
-            outline: none;
-        }
+.tagline{
+    font-size:12px;
+    color:#cbd5e1;
+    margin-top:3px;
+}
 
-        .search-form input:focus {
-            border-color: #2563eb;
-        }
+.header-search{
+    display:flex;
+    align-items:center;
+    gap:8px;
+}
 
-        .search-form button {
-            padding: 12px 18px;
-            background: #2563eb;
-            color: white;
-            border: none;
-            border-radius: 9px;
-            cursor: pointer;
-        }
+.header-search input{
+    width:220px;
+    padding:11px;
+    border:1px solid #475569;
+    border-radius:7px;
+    outline:none;
+}
 
-        .news-container {
-            max-width: 1150px;
-            margin: auto;
-            padding: 10px 15px 40px;
-            display: grid;
-            grid-template-columns:
-                repeat(auto-fill, minmax(270px, 1fr));
-            gap: 22px;
-        }
+.header-search button{
+    padding:11px 16px;
+    background:var(--red);
+    color:white;
+    border:0;
+    border-radius:7px;
+    cursor:pointer;
+    font-weight:bold;
+}
 
-        .news-card {
-            background: white;
-            border-radius: 13px;
-            overflow: hidden;
-            box-shadow: 0 3px 12px rgba(0,0,0,0.07);
-            transition: transform 0.2s;
-        }
+/* NAVIGATION */
 
-        .news-card:hover {
-            transform: translateY(-4px);
-        }
+.navigation{
+    background:#fff;
+    border-bottom:1px solid #e5e7eb;
+}
 
-        .news-image {
-            width: 100%;
-            height: 190px;
-            background: #111827;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-        }
+.nav-inner{
+    max-width:1250px;
+    margin:auto;
+    display:flex;
+    align-items:center;
+    gap:28px;
+    padding:13px 18px;
+    overflow-x:auto;
+    white-space:nowrap;
+}
 
-        .news-image img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            display: block;
-        }
+.nav-inner a{
+    font-size:14px;
+    font-weight:700;
+    color:#334155;
+}
 
-        .image-fallback {
-            color: white;
-            font-size: 20px;
-            font-weight: bold;
-            letter-spacing: 1px;
-        }
+.nav-inner a:hover{
+    color:var(--red);
+}
 
-        .news-content {
-            padding: 17px;
-        }
+/* BREAKING NEWS */
 
-        .category {
-            display: inline-block;
-            background: #dbeafe;
-            color: #1d4ed8;
-            padding: 5px 9px;
-            border-radius: 5px;
-            font-size: 11px;
-            font-weight: bold;
-            margin-bottom: 10px;
-        }
+.breaking{
+    max-width:1250px;
+    margin:18px auto;
+    padding:0 18px;
+}
 
-        .news-title {
-            font-size: 18px;
-            line-height: 1.5;
-            margin-bottom: 10px;
-        }
+.breaking-inner{
+    background:white;
+    display:flex;
+    align-items:center;
+    overflow:hidden;
+    border-radius:7px;
+    border:1px solid #e5e7eb;
+}
 
-        .news-description {
-            color: #64748b;
-            font-size: 14px;
-            line-height: 1.6;
-            margin-bottom: 13px;
-        }
+.breaking-label{
+    background:var(--red);
+    color:white;
+    font-weight:bold;
+    padding:12px 17px;
+    white-space:nowrap;
+    font-size:13px;
+}
 
-        .news-meta {
-            color: #64748b;
-            font-size: 12px;
-            margin-bottom: 14px;
-        }
+.ticker{
+    overflow:hidden;
+    flex:1;
+    padding:10px 0;
+}
 
-        .read-more {
-            display: inline-block;
-            background: #2563eb;
-            color: white;
-            text-decoration: none;
-            padding: 9px 14px;
-            border-radius: 7px;
-            font-size: 13px;
-        }
+.ticker-track{
+    display:flex;
+    width:max-content;
+    animation:ticker 35s linear infinite;
+}
 
-        .empty-message {
-            text-align: center;
-            padding: 50px 15px;
-            color: #64748b;
-            grid-column: 1 / -1;
-        }
+.ticker-track:hover{
+    animation-play-state:paused;
+}
 
-        footer {
-            background: #111827;
-            color: #cbd5e1;
-            text-align: center;
-            padding: 20px;
-            font-size: 13px;
-        }
+.ticker-track a{
+    padding:0 28px;
+    font-size:13px;
+    font-weight:600;
+    white-space:nowrap;
+}
 
-        @media (max-width: 600px) {
+.ticker-track a::before{
+    content:"●";
+    color:var(--red);
+    margin-right:10px;
+}
 
-            header h1 {
-                font-size: 23px;
-            }
+@keyframes ticker{
+    from{transform:translateX(0);}
+    to{transform:translateX(-50%);}
+}
 
-            .news-container {
-                grid-template-columns: 1fr;
-            }
+/* PAGE */
 
-            .news-image {
-                height: 210px;
-            }
+.container{
+    max-width:1250px;
+    margin:auto;
+    padding:10px 18px 40px;
+}
 
-        }
+/* SECTION TITLE */
 
-    </style>
+.section-heading{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    margin:22px 0 15px;
+    border-left:5px solid var(--red);
+    padding-left:12px;
+}
 
+.section-heading h2{
+    font-size:22px;
+    color:var(--navy);
+}
+
+/* FEATURED NEWS */
+
+.featured-card{
+    display:grid;
+    grid-template-columns:1.35fr 1fr;
+    background:white;
+    border-radius:12px;
+    overflow:hidden;
+    box-shadow:0 3px 15px rgba(0,0,0,.06);
+    margin-bottom:30px;
+}
+
+.featured-image{
+    height:360px;
+    background:var(--navy);
+    overflow:hidden;
+    position:relative;
+}
+
+.featured-image img{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+}
+
+.image-fallback{
+    width:100%;
+    height:100%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    color:white;
+    background:linear-gradient(135deg,#10213a,#174ea6);
+    font-weight:900;
+    font-size:24px;
+}
+
+.featured-content{
+    padding:30px;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+}
+
+.category{
+    display:inline-block;
+    background:#fee2e2;
+    color:#b91c1c;
+    padding:5px 10px;
+    border-radius:5px;
+    font-size:11px;
+    font-weight:bold;
+    width:max-content;
+    margin-bottom:13px;
+}
+
+.featured-content h2{
+    font-size:27px;
+    line-height:1.4;
+    margin-bottom:13px;
+}
+
+.featured-content p{
+    color:var(--muted);
+    font-size:15px;
+    margin-bottom:17px;
+}
+
+.meta{
+    color:var(--muted);
+    font-size:12px;
+    margin-bottom:17px;
+}
+
+.read-more{
+    display:inline-block;
+    background:var(--blue);
+    color:white;
+    padding:11px 17px;
+    border-radius:6px;
+    font-size:13px;
+    font-weight:bold;
+    width:max-content;
+}
+
+/* NEWS GRID */
+
+.news-grid{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:20px;
+}
+
+.news-card{
+    background:white;
+    border-radius:10px;
+    overflow:hidden;
+    box-shadow:0 3px 12px rgba(0,0,0,.05);
+    transition:.2s;
+}
+
+.news-card:hover{
+    transform:translateY(-3px);
+    box-shadow:0 7px 20px rgba(0,0,0,.10);
+}
+
+.news-card-image{
+    height:220px;
+    background:var(--navy);
+    overflow:hidden;
+}
+
+.news-card-image img{
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    display:block;
+}
+
+.news-content{
+    padding:18px;
+}
+
+.news-content h3{
+    font-size:18px;
+    line-height:1.5;
+    margin-bottom:10px;
+}
+
+.news-content p{
+    color:var(--muted);
+    font-size:14px;
+    margin-bottom:13px;
+}
+
+.news-meta{
+    font-size:12px;
+    color:var(--muted);
+    margin-bottom:15px;
+}
+
+/* CATEGORIES */
+
+.category-section{
+    margin-top:35px;
+}
+
+.category-grid{
+    display:grid;
+    grid-template-columns:repeat(4,1fr);
+    gap:13px;
+}
+
+.category-box{
+    background:white;
+    padding:18px 10px;
+    text-align:center;
+    border-radius:9px;
+    font-weight:bold;
+    color:var(--navy);
+    border:1px solid #e5e7eb;
+    transition:.2s;
+}
+
+.category-box:hover{
+    background:var(--navy);
+    color:white;
+}
+
+/* EMPTY */
+
+.empty-message{
+    grid-column:1/-1;
+    background:white;
+    text-align:center;
+    padding:50px 15px;
+    border-radius:10px;
+}
+
+/* FOOTER */
+
+footer{
+    background:var(--navy);
+    color:#cbd5e1;
+    padding:35px 18px 18px;
+    margin-top:30px;
+}
+
+.footer-inner{
+    max-width:1250px;
+    margin:auto;
+    display:grid;
+    grid-template-columns:2fr 1fr;
+    gap:30px;
+}
+
+.footer-inner h2{
+    color:white;
+    margin-bottom:10px;
+}
+
+.footer-inner p{
+    font-size:13px;
+    line-height:1.8;
+}
+
+.footer-bottom{
+    max-width:1250px;
+    margin:25px auto 0;
+    padding-top:17px;
+    border-top:1px solid #334155;
+    text-align:center;
+    font-size:12px;
+}
+
+/* MOBILE */
+
+@media(max-width:750px){
+
+    .header-inner{
+        flex-direction:column;
+        align-items:flex-start;
+    }
+
+    .header-search{
+        width:100%;
+    }
+
+    .header-search input{
+        flex:1;
+        min-width:0;
+    }
+
+    .nav-inner{
+        gap:22px;
+    }
+
+    .breaking{
+        margin:12px auto;
+    }
+
+    .featured-card{
+        grid-template-columns:1fr;
+    }
+
+    .featured-image{
+        height:230px;
+    }
+
+    .featured-content{
+        padding:20px;
+    }
+
+    .featured-content h2{
+        font-size:21px;
+    }
+
+    .news-grid{
+        grid-template-columns:1fr;
+    }
+
+    .news-card-image{
+        height:210px;
+    }
+
+    .category-grid{
+        grid-template-columns:repeat(2,1fr);
+    }
+
+    .footer-inner{
+        grid-template-columns:1fr;
+    }
+
+}
+
+</style>
 </head>
 
 <body>
 
-<header>
+<!-- HEADER -->
 
-    <h1>📰 BHAI KI NEWS</h1>
+<header class="top-header">
 
-    <p>Latest News | Trusted Sources | Fast Updates</p>
+<div class="header-inner">
 
+<div>
+    <div class="logo">
+        BHAI KI <span>NEWS</span>
+    </div>
+
+    <div class="tagline">
+        विश्वसनीय खबरें | सही जानकारी | तेज अपडेट
+    </div>
+</div>
+
+<form class="header-search" method="GET" action="/">
+
+    <input
+        type="search"
+        name="q"
+        placeholder="खबर खोजें..."
+        value="{{ query|default('', true)|e }}"
+        maxlength="100"
+    >
+
+    <button type="submit">Search</button>
+
+</form>
+
+</div>
 </header>
 
 
-<section class="search-container">
+<!-- NAVIGATION -->
 
-    <form class="search-form" method="GET" action="/">
+<nav class="navigation">
 
-        <input
-            type="search"
-            name="q"
-            placeholder="News Search Kare..."
-            value="{{ query }}"
-            maxlength="100"
-        >
+<div class="nav-inner">
 
-        <button type="submit">
-            Search
-        </button>
+    <a href="/">होम</a>
+    <a href="#latest">Latest News</a>
+    <a href="#categories">Categories</a>
+    <a href="#about">About Us</a>
 
-    </form>
+</div>
 
-</section>
+</nav>
 
 
-<main class="news-container">
+<!-- BREAKING NEWS -->
 
-    {% if news %}
+{% if news %}
 
-        {% for item in news %}
+<section class="breaking">
 
-        <article class="news-card">
+<div class="breaking-inner">
 
-            <div class="news-image">
+    <div class="breaking-label">
+        🔴 BREAKING NEWS
+    </div>
 
-                {% if item.image %}
+    <div class="ticker">
 
-                    <img
-                        src="{{ item.image }}"
-                        alt="{{ item.title }}"
-                        loading="lazy"
-                        referrerpolicy="no-referrer"
-                        onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
-                    >
+        <div class="ticker-track">
 
-                    <div
-                        class="image-fallback"
-                        style="display:none;"
-                    >
-                        BHAI KI NEWS
-                    </div>
+            {% for item in news %}
 
-                {% else %}
+            <a href="{{ item.link|e }}"
+               target="_blank"
+               rel="noopener noreferrer">
+                {{ item.title }}
+            </a>
 
-                    <div class="image-fallback">
-                        BHAI KI NEWS
-                    </div>
+            {% endfor %}
 
-                {% endif %}
+            {% for item in news %}
 
-            </div>
+            <a href="{{ item.link|e }}"
+               target="_blank"
+               rel="noopener noreferrer">
+                {{ item.title }}
+            </a>
 
-
-            <div class="news-content">
-
-                <span class="category">
-                    {{ item.category }}
-                </span>
-
-                <h2 class="news-title">
-                    {{ item.title }}
-                </h2>
-
-                <p class="news-description">
-                    {{ item.description[:220] }}
-                </p>
-
-                <div class="news-meta">
-
-                    Source: {{ item.source }}
-
-                    <br><br>
-
-                    {% if item.published %}
-
-                        {{ item.published }}
-
-                    {% else %}
-
-                        Date unavailable
-
-                    {% endif %}
-
-                </div>
-
-                <a
-                    href="{{ item.link }}"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="read-more"
-                >
-                    Read Full News →
-                </a>
-
-            </div>
-
-        </article>
-
-        {% endfor %}
-
-    {% else %}
-
-        <div class="empty-message">
-
-            <h2>No News Found</h2>
-
-            <p>Abhi is search se related news available nahi hai.</p>
+            {% endfor %}
 
         </div>
 
-    {% endif %}
+    </div>
+
+</div>
+
+</section>
+
+{% endif %}
+
+
+<main class="container">
+
+{% if news %}
+
+<!-- FEATURED NEWS -->
+
+<div class="section-heading">
+
+    <h2>⭐ आज की प्रमुख खबर</h2>
+
+</div>
+
+
+{% set featured = news[0] %}
+
+<article class="featured-card">
+
+    <div class="featured-image">
+
+        {% if featured.image %}
+
+        <img
+            src="{{ featured.image|e }}"
+            alt="{{ featured.title|e }}"
+            loading="eager"
+            referrerpolicy="no-referrer"
+            onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"
+        >
+
+        <div class="image-fallback" style="display:none;">
+            BHAI KI NEWS
+        </div>
+
+        {% else %}
+
+        <div class="image-fallback">
+            BHAI KI NEWS
+        </div>
+
+        {% endif %}
+
+    </div>
+
+
+    <div class="featured-content">
+
+        <span class="category">
+            {{ featured.category }}
+        </span>
+
+        <h2>
+            {{ featured.title }}
+        </h2>
+
+        <p>
+            {{ featured.description[:250] }}
+        </p>
+
+        <div class="meta">
+
+            Source: {{ featured.source }}
+
+            <br>
+
+            {{ featured.published or 'Date unavailable' }}
+
+        </div>
+
+        <a
+            href="{{ featured.link|e }}"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="read-more"
+        >
+            Read Full News →
+        </a>
+
+    </div>
+
+</article>
+
+
+<!-- LATEST NEWS -->
+
+<div class="section-heading" id="latest">
+
+    <h2>📰 Latest News</h2>
+
+</div>
+
+
+<div class="news-grid">
+
+{% for item in news[1:] %}
+
+<article class="news-card">
+
+    <div class="news-card-image">
+
+        {% if item.image %}
+
+        <img
+            src="{{ item.image|e }}"
+            alt="{{ item.title|e }}"
+            loading="lazy"
+            referrerpolicy="no-referrer"
+            onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"
+        >
+
+        <div class="image-fallback" style="display:none;">
+            BHAI KI NEWS
+        </div>
+
+        {% else %}
+
+        <div class="image-fallback">
+            BHAI KI NEWS
+        </div>
+
+        {% endif %}
+
+    </div>
+
+
+    <div class="news-content">
+
+        <span class="category">
+            {{ item.category }}
+        </span>
+
+        <h3>
+            {{ item.title }}
+        </h3>
+
+        <p>
+            {{ item.description[:180] }}
+        </p>
+
+        <div class="news-meta">
+
+            Source: {{ item.source }}
+
+            <br>
+
+            {{ item.published or 'Date unavailable' }}
+
+        </div>
+
+        <a
+            href="{{ item.link|e }}"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="read-more"
+        >
+            Read Full News →
+        </a>
+
+    </div>
+
+</article>
+
+{% endfor %}
+
+</div>
+
+
+{% else %}
+
+<div class="empty-message">
+
+    <h2>No News Found</h2>
+
+    <p>
+        अभी इस समय कोई खबर उपलब्ध नहीं है।
+    </p>
+
+</div>
+
+{% endif %}
+
+
+<!-- CATEGORIES -->
+
+<section class="category-section" id="categories">
+
+<div class="section-heading">
+
+    <h2>📂 News Categories</h2>
+
+</div>
+
+<div class="category-grid">
+
+    <a href="/?q=National" class="category-box">
+        🇮🇳 National
+    </a>
+
+    <a href="/?q=International" class="category-box">
+        🌎 International
+    </a>
+
+    <a href="/?q=Uttar Pradesh" class="category-box">
+        उत्तर प्रदेश
+    </a>
+
+    <a href="/?q=Business" class="category-box">
+        💼 Business
+    </a>
+
+    <a href="/?q=Technology" class="category-box">
+        💻 Technology
+    </a>
+
+    <a href="/?q=Sports" class="category-box">
+        🏏 Sports
+    </a>
+
+    <a href="/?q=Education" class="category-box">
+        📚 Education
+    </a>
+
+</div>
+
+</section>
 
 </main>
 
 
+<!-- FOOTER -->
+
 <footer>
 
-    © 2026 Bhai Ki News. All Rights Reserved.
+<div class="footer-inner">
+
+    <div id="about">
+
+        <h2>BHAI KI NEWS</h2>
+
+        <p>
+            BHAI KI NEWS एक डिजिटल न्यूज़ प्लेटफॉर्म है।
+            हमारा उद्देश्य पाठकों तक राष्ट्रीय,
+            अंतरराष्ट्रीय और महत्वपूर्ण खबरें पहुँचाना है।
+        </p>
+
+    </div>
+
+    <div>
+
+        <h2>Our Portal</h2>
+
+        <p>Latest News</p>
+        <p>National News</p>
+        <p>Technology</p>
+        <p>Education</p>
+
+    </div>
+
+</div>
+
+<div class="footer-bottom">
+
+    © 2026 BHAI KI NEWS. All Rights Reserved.
+
+</div>
 
 </footer>
 
 </body>
-  </html>
+            </html>
