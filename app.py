@@ -2394,40 +2394,8 @@ def home():
     seen = set()
     cards = ""
 
-    # RSS NEWS LOADING
-    if cat:
-
-        for name, url in FEEDS.items():
-
-            if cat.lower() in name.lower():
-
-                cards += make_cards(
-                    get_cached_feed(name, url),
-                    seen,
-                    limit=20
-                )
-
-    else:
-
-        with ThreadPoolExecutor(max_workers=4) as ex:
-
-            fut = {
-                n: ex.submit(get_cached_feed, n, u)
-                for n, u in FEEDS.items()
-            }
-
-            for n in FEEDS:
-
-                try:
-
-                    cards += make_cards(
-                        fut[n].result(),
-                        seen,
-                        limit=10
-                    )
-
-                except Exception:
-                    pass
+# RSS NEWS LOADING
+cards = "" 
 
     # TODAY NOTE
     note = get_today_note()
