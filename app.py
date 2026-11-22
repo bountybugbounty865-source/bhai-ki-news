@@ -1404,23 +1404,17 @@ def get_news_image(entry):
                     if len(candidates) >= _MAX_CANDIDATES:
                         break
 
-            except Exception:
+        except Exception:
+            pass
 
-                pass
-# 7. FAST
-for image_url in candidates:
-    if _is_relevant_image(image_url, article_url):
-        return image_url
-# 8. NO VALID IMAGE
-return ""
-# --------------------------
-# 8. NO VALID IMAGE
-# --------------------------
+        # 7. FAST
+        for image_url in candidates:
+            if _is_relevant_image(image_url, article_url):
+                return image_url
 
-return ""
-
+        # 8. NO VALID IMAGE
+        return ""
     except Exception as e:
-
         try:
             app.logger.warning(
                 "News image extraction failed: %s",
@@ -1428,7 +1422,7 @@ return ""
             )
         except Exception:
             pass
-
+        return "" 
         return ""
 def make_cards(feed, seen, limit=15):
 
