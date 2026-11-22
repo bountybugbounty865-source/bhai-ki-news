@@ -1386,32 +1386,61 @@ def get_news_image(entry):
         # ---------------------------------
 
         if (
-            article_url
-            and len(candidates) < _MAX_CANDIDATES
-            and _is_syntax_safe_url(article_url)
-        ):
+    article_url
+    and isinstance(article_url, str)
+    and not any(
+        domain in article_url.lower()
+        for domain in (
+            "/videos/",
+            "/video/",
+            "youtube.com",
+            "youtu.be",
+            "facebook.com",
+            "instagram.com",
+            "twitter.com",
+            "x.com",
+            "reddit.com",
+            "google"
+        )
+    )
+    and not article_url.lower().startswith("data:")
+):
+    try:
+        article_images = (
+            article.get("image")
+            or article.get("urlToImage")
+            or article.get("thumbnail")
+        )
 
-        try:
-            article_images = article.get("image") or article.get("urlToImage") or article.get("thumbnail")
-            candidates = article_images.split(",") if isinstance(article_images, str) else [article_images]
-            if not candidates:
-                return ""
-            for image_url in candidates:
+        if isinstance(article_images, str):
+            candidates = article_images.split(",")
+        elif isinstance(article_images, list):
+            candidates = article_images
+        else:
+            candidates = [article_images]
+
+        for image_url in candidates:
+            try:
+                if isinstance(image_url, dict):
+                    image_url = (
+                        image_url.get("url")
+                        or image_url.get("src")
+                    )
+
+                if not isinstance(image_url, str):
+                    continue
+
+                image_url = image_url.strip()
+
                 if _is_relevant_image(image_url, article_url):
                     return image_url
-            for image_url in candidates:
-                try:
-                    if _is_relevant_image(image_url, article_url):
-                        return image_url
-                except Exception:
-                    continue
-        except Exception:
-            pass
-        # 7. FAST
-        for image_url in candidates:
-            if _is_relevant_image(image_url, article_url):
-                return image_url
 
+            except Exception:
+                continue
+
+    except Exception:
+        pass
+        
         # 8. NO VALID IMAGE
         return ""
     except Exception as e:
