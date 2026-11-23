@@ -1410,7 +1410,6 @@ def get_news_image(entry):
             )
             and not article_url.lower().startswith("data:")
         ):
-
             article_images = (
                 entry.get("image")
                 or entry.get("urlToImage")
@@ -2389,14 +2388,37 @@ def search_box():
 
 @app.route("/")
 def home():
-
     cat = request.args.get("cat", "")
     seen = set()
     cards = ""
 
-# RSS NEWS LOADING
-cards = "" 
+    # RSS NEWS LOADING
+    if cat:
+        for name, url in FEEDS.items():
+            if cat.lower() in name.lower():
+                cards += make_cards(
+                    name,
+                    get_cached_feed(name, url),
+                    seen,
+                    limit=20
+                )
+    else:
+        with ThreadPoolExecutor(max_workers=4) as ex:
+            fut = {
+                n: ex.submit(get_cached_feed, n, u)
+                for n, u in FEEDS.items()
+            }
 
+            for n in FEEDS:
+                try:
+                    cards += make_cards(
+                        n,
+                        fut[n].result(),
+                        seen,
+                        limit=10
+                    )
+                except Exception:
+                    pass
     # TODAY NOTE
     note = get_today_note()
 
